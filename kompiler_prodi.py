@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import sqlite3
 from io import BytesIO
 
 # ==========================================
@@ -8,33 +9,59 @@ from io import BytesIO
 # ==========================================
 st.set_page_config(page_title="Kompiler Usulan Anggaran FIB", page_icon="🔐", layout="wide")
 
-FILE_DATABASE = "database_usulan_prodi.csv"
+FILE_DB = "database_usulan_prodi.db"
+FILE_CSV_LAMA = "database_usulan_prodi.csv" # Untuk auto-migrasi data lama
 UPLOAD_DIR = "tor_uploads"
 
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
+# Fungsi Canggih untuk Auto-Migrasi & Load Data SQLite
 def load_data():
-    if os.path.exists(FILE_DATABASE):
-        df = pd.read_csv(FILE_DATABASE)
-        if "Status" not in df.columns: df["Status"] = "Menunggu Review"
-        if "Catatan_Fakultas" not in df.columns: df["Catatan_Fakultas"] = "-"
-        if "File_TOR" not in df.columns: df["File_TOR"] = "-"
-        return df
+    conn = sqlite3.connect(FILE_DB)
+    
+    # Mengecek apakah tabel 'usulan' sudah ada di dalam database
+    cek_tabel = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='usulan'", conn)
+    
+    if cek_tabel.empty:
+        # Jika database baru masih kosong, cek apakah ada file CSV yang lama
+        if os.path.exists(FILE_CSV_LAMA):
+            df = pd.read_csv(FILE_CSV_LAMA)
+            # Menambal kolom baru jika data CSV lama belum punya
+            if "Status" not in df.columns: df["Status"] = "Menunggu Review"
+            if "Catatan_Fakultas" not in df.columns: df["Catatan_Fakultas"] = "-"
+            if "File_TOR" not in df.columns: df["File_TOR"] = "-"
+            
+            # Pindahkan isi CSV ke dalam SQLite secara permanen
+            df.to_sql("usulan", conn, if_exists="replace", index=False)
+            conn.close()
+            return df
+        else:
+            # Jika benar-benar baru pertama kali jalan
+            df_kosong = pd.DataFrame(columns=[
+                "Tanggal_Input", "Program_Studi", "Nama_Kegiatan", 
+                "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", 
+                "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"
+            ])
+            df_kosong.to_sql("usulan", conn, if_exists="replace", index=False)
+            conn.close()
+            return df_kosong
     else:
-        return pd.DataFrame(columns=[
-            "Tanggal_Input", "Program_Studi", "Nama_Kegiatan", 
-            "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", 
-            "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"
-        ])
+        # Jika database sudah siap, langsung baca dari SQLite
+        df = pd.read_sql("SELECT * FROM usulan", conn)
+        conn.close()
+        return df
 
+# Fungsi menyimpan langsung ke SQLite
 def save_data(df):
-    df.to_csv(FILE_DATABASE, index=False)
+    conn = sqlite3.connect(FILE_DB)
+    df.to_sql("usulan", conn, if_exists="replace", index=False)
+    conn.close()
 
 df_usulan = load_data()
 
 # ==========================================
-# 2. DATABASE USER
+# 2. DATABASE USER 
 # ==========================================
 USER_CREDENTIALS = {
     "admin": {"password": "adminfib", "role": "admin", "nama_tampil": "Fakultas Ilmu Budaya (Admin)"},
@@ -215,7 +242,6 @@ elif st.session_state["role"] == "admin":
     if df_usulan.empty: 
         st.warning("Data kosong.")
     else:
-        # PERBAIKAN VARIABEL TAB DI SINI
         tab_rev, tab_hapus, tab_ins = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight Fakultas"])
         
         # --- TAB 1: REVIEW ---
