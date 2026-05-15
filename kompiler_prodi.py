@@ -12,6 +12,7 @@ st.set_page_config(page_title="Kompiler Usulan Anggaran FIB", page_icon="📝", 
 # Path folder sesuai permintaan
 BASE_DIR = r"C:\Users\rizki\OneDrive\Documents\Project Python\Dashboard Anggaran"
 FILE_DB = os.path.join(BASE_DIR, "database_usulan_prodi.db")
+FILE_CSV_LAMA = os.path.join(BASE_DIR, "database_usulan_prodi.csv") # <-- INI PERBAIKANNYA
 UPLOAD_DIR = os.path.join(BASE_DIR, "tor_uploads")
 
 # Pastikan folder database dan upload tersedia
@@ -25,14 +26,23 @@ def load_data():
     cek_tabel = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='usulan'", conn)
     
     if cek_tabel.empty:
-        df_kosong = pd.DataFrame(columns=[
-            "Tanggal_Input", "Program_Studi", "Nama_Kegiatan", 
-            "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", 
-            "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"
-        ])
-        df_kosong.to_sql("usulan", conn, if_exists="replace", index=False)
-        conn.close()
-        return df_kosong
+        if os.path.exists(FILE_CSV_LAMA):
+            df = pd.read_csv(FILE_CSV_LAMA)
+            if "Status" not in df.columns: df["Status"] = "Menunggu Review"
+            if "Catatan_Fakultas" not in df.columns: df["Catatan_Fakultas"] = "-"
+            if "File_TOR" not in df.columns: df["File_TOR"] = "-"
+            df.to_sql("usulan", conn, if_exists="replace", index=False)
+            conn.close()
+            return df
+        else:
+            df_kosong = pd.DataFrame(columns=[
+                "Tanggal_Input", "Program_Studi", "Nama_Kegiatan", 
+                "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", 
+                "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"
+            ])
+            df_kosong.to_sql("usulan", conn, if_exists="replace", index=False)
+            conn.close()
+            return df_kosong
     else:
         df = pd.read_sql("SELECT * FROM usulan", conn)
         conn.close()
