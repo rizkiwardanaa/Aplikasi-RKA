@@ -61,7 +61,7 @@ def save_data(df):
 df_usulan = load_data()
 
 # ==========================================
-# 2. DATABASE USER 
+# 2. DATABASE USER
 # ==========================================
 USER_CREDENTIALS = {
     "admin": {"password": "adminfib", "role": "admin", "nama_tampil": "Fakultas Ilmu Budaya (Admin)"},
