@@ -61,7 +61,8 @@ USER_CREDENTIALS = {
     "sasing": {"password": "123", "role": "prodi", "nama_tampil": "Sastra Inggris"},
     "etno": {"password": "123", "role": "prodi", "nama_tampil": "Etnomusikologi"},
     "tari": {"password": "123", "role": "prodi", "nama_tampil": "Tari"},
-    "kajian": {"password": "123", "role": "prodi", "nama_tampil": "Kajian Budaya (S2)"}
+    "kajian": {"password": "123", "role": "prodi", "nama_tampil": "Kajian Budaya (S2)"},
+    "p2mf": {"password": "123", "role": "prodi", "nama_tampil": "Pusat Penjaminan Mutu Fakultas"}
 }
 
 if "logged_in" not in st.session_state:
@@ -141,15 +142,20 @@ if st.session_state["role"] == "prodi":
                     if catatan_keg != "-":
                         st.warning(f"**Catatan Fakultas:** {catatan_keg}")
                     
-                    st.caption("💡 Anda dapat langsung mengedit nilai kotak, menambah baris baru di bawah tabel, atau menghapus baris rincian belanja.")
+                    st.caption("💡 **Cara Hapus Rincian:** Centang kotak pada kolom **'Hapus?'** untuk rincian yang tidak diperlukan, lalu klik Simpan Perubahan.")
                     
                     df_editable = df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan"]].reset_index(drop=True)
+                    # Menambahkan kolom Hapus di depan
+                    df_editable.insert(0, "Hapus", False)
+                    
                     edited_keg_rows = st.data_editor(
                         df_editable,
                         num_rows="dynamic",
                         use_container_width=True,
+                        hide_index=True,
                         key=f"prod_dash_ed_{k}",
                         column_config={
+                            "Hapus": st.column_config.CheckboxColumn("Hapus?", default=False),
                             "Rincian_Belanja": st.column_config.TextColumn("Rincian Belanja", required=True),
                             "Volume": st.column_config.NumberColumn("Volume", min_value=0, required=True),
                             "Satuan": st.column_config.SelectboxColumn("Satuan", options=["Unit", "Orang", "Hari", "Bulan", "Tahun", "Jam", "Paket", "Stel", "Kegiatan"], required=True),
@@ -160,7 +166,9 @@ if st.session_state["role"] == "prodi":
                     c_btn1, c_btn2 = st.columns([1, 4])
                     with c_btn1:
                         if st.button("💾 Simpan Perubahan", key=f"save_prod_dash_{k}"):
-                            valid_edited = edited_keg_rows[edited_keg_rows["Rincian_Belanja"].str.strip() != ""]
+                            # Menyaring data: Hanya ambil yang TIDAK dicentang "Hapus" dan rinciannya tidak kosong
+                            valid_edited = edited_keg_rows[(edited_keg_rows["Hapus"] == False) & (edited_keg_rows["Rincian_Belanja"].str.strip() != "")]
+                            
                             df_usulan = df_usulan[~((df_usulan["Program_Studi"] == st.session_state["nama_user"]) & (df_usulan["Nama_Kegiatan"] == k))]
                             
                             if not valid_edited.empty:
@@ -231,25 +239,33 @@ if st.session_state["role"] == "prodi":
             st.info(f"Status: {df_curr['Status'].iloc[0]} | Catatan: {df_curr['Catatan_Fakultas'].iloc[0]}")
             
             if df_curr['Status'].iloc[0] == "Perlu Revisi":
-                st.warning("⚠️ Silakan perbaiki rincian biaya di bawah ini dan klik 'Kirim Ulang Revisi'.")
-                df_to_edit = df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan"]]
+                st.warning("⚠️ Silakan perbaiki rincian biaya di bawah ini (Centang 'Hapus?' untuk membuang rincian) dan klik 'Kirim Ulang Revisi'.")
+                
+                df_to_edit = df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan"]].reset_index(drop=True)
+                df_to_edit.insert(0, "Hapus", False)
+                
                 rev_ed = st.data_editor(df_to_edit, num_rows="dynamic", use_container_width=True, hide_index=True, column_config={
+                    "Hapus": st.column_config.CheckboxColumn("Hapus?", default=False),
                     "Satuan": st.column_config.SelectboxColumn("Satuan", options=["Unit", "Orang", "Hari", "Bulan", "Tahun", "Jam", "Paket", "Stel", "Kegiatan"])
                 })
                 if st.button("Kirim Ulang Revisi"):
+                    valid_rev = rev_ed[(rev_ed["Hapus"] == False) & (rev_ed["Rincian_Belanja"].str.strip() != "")]
+                    
                     df_usulan = df_usulan[~((df_usulan["Program_Studi"]==st.session_state["nama_user"]) & (df_usulan["Nama_Kegiatan"]==sel_keg))]
                     
-                    rev_entries = []
-                    tgl_rev = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
-                    for _, r in rev_ed.iterrows():
-                        rev_entries.append({
-                            "Tanggal_Input": tgl_rev, "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": sel_keg,
-                            "Rincian_Belanja": r["Rincian_Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
-                            "Harga_Satuan": r["Harga_Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
-                            "Prioritas": df_curr["Prioritas"].iloc[0], "Status": "Menunggu Review", "Catatan_Fakultas": f"Revisi: {df_curr['Catatan_Fakultas'].iloc[0]}",
-                            "File_TOR": df_curr["File_TOR"].iloc[0]
-                        })
-                    df_usulan = pd.concat([df_usulan, pd.DataFrame(rev_entries)], ignore_index=True)
+                    if not valid_rev.empty:
+                        rev_entries = []
+                        tgl_rev = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+                        for _, r in valid_rev.iterrows():
+                            rev_entries.append({
+                                "Tanggal_Input": tgl_rev, "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": sel_keg,
+                                "Rincian_Belanja": r["Rincian_Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
+                                "Harga_Satuan": r["Harga_Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
+                                "Prioritas": df_curr["Prioritas"].iloc[0], "Status": "Menunggu Review", "Catatan_Fakultas": f"Revisi: {df_curr['Catatan_Fakultas'].iloc[0]}",
+                                "File_TOR": df_curr["File_TOR"].iloc[0]
+                            })
+                        df_usulan = pd.concat([df_usulan, pd.DataFrame(rev_entries)], ignore_index=True)
+                        
                     save_data(df_usulan)
                     st.success("Revisi berhasil dikirim!"); st.rerun()
             else:
@@ -271,7 +287,7 @@ if st.session_state["role"] == "prodi":
 elif st.session_state["role"] == "admin":
     st.title("📊 Dashboard Monitoring & Review")
     
-    # --- FITUR BARU: TOGGLE SEMBUNYIKAN NILAI ANGGARAN ---
+    # --- FITUR TOGGLE SEMBUNYIKAN NILAI ANGGARAN ---
     col_info, col_toggle = st.columns([3, 1])
     with col_info:
         st.info("Gunakan tab di bawah untuk meninjau usulan dari setiap Program Studi.")
@@ -284,12 +300,10 @@ elif st.session_state["role"] == "admin":
         tab_rev, tab_hapus, tab_ins = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight Fakultas"])
         
         with tab_rev:
-            # BAGIAN 1: REKAPITULASI SELURUH PRODI
             st.subheader("🏙️ Rekapitulasi Anggaran Per Prodi")
             rekap_semua = df_usulan.groupby("Program_Studi")["Total_Usulan"].sum().reset_index()
             rekap_semua.columns = ["Program Studi", "Total Usulan (Rp)"]
             
-            # Logika Sembunyikan Nilai di Tabel Rekap
             if sembunyikan_nilai:
                 rekap_semua["Total Usulan (Rp)"] = "Rp ***"
                 st.table(rekap_semua)
@@ -298,7 +312,6 @@ elif st.session_state["role"] == "admin":
 
             st.markdown("---")
             
-            # BAGIAN 2: DRILL-DOWN DETAIL PER PRODI
             st.subheader("🔍 Detail Kegiatan Per Prodi")
             prodi_sel = st.selectbox("Pilih Prodi untuk melihat daftar kegiatan:", sorted(df_usulan["Program_Studi"].unique()))
             df_p = df_usulan[df_usulan["Program_Studi"] == prodi_sel]
@@ -310,7 +323,6 @@ elif st.session_state["role"] == "admin":
                 df_k = df_p[df_p["Nama_Kegiatan"] == k].copy()
                 total_keg_val = df_k["Total_Usulan"].sum()
                 
-                # Logika Sembunyikan Nilai di Expander Title
                 teks_nominal_expander = "Rp ***" if sembunyikan_nilai else f"Rp {total_keg_val:,.0f}".replace(',', '.')
                 
                 with st.expander(f"📌 {k.upper()} | Total Usulan: {teks_nominal_expander} | Status: {df_k['Status'].iloc[0]}"):
@@ -328,14 +340,12 @@ elif st.session_state["role"] == "admin":
                         df_usulan.loc[(df_usulan["Program_Studi"]==prodi_sel) & (df_usulan["Nama_Kegiatan"]==k), ["Status", "Catatan_Fakultas"]] = [n_s, n_n]
                         save_data(df_usulan); st.success(f"Status '{k}' diperbarui!"); st.rerun()
                     
-                    # Logika Sembunyikan Nilai di Dataframe Detail
                     if sembunyikan_nilai:
                         df_tampil = df_k[["Rincian_Belanja", "Volume", "Satuan"]].copy()
                         st.dataframe(df_tampil, hide_index=True, use_container_width=True)
                     else:
                         st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]], hide_index=True, use_container_width=True)
 
-            # Ekspor Data
             st.markdown("---")
             st.download_button("📥 Download Excel Rekapitulasi", data=df_usulan.to_csv(index=False).encode('utf-8'), file_name="Rekap_FIB_2026.csv", mime="text/csv")
 
@@ -350,7 +360,6 @@ elif st.session_state["role"] == "admin":
         with tab_ins:
             st.subheader("🤖 Analisis & Insight Pintar")
             
-            # Logika Sembunyikan Nilai di Tab Insight
             if sembunyikan_nilai:
                 st.warning("⚠️ Insight angka dan grafik dinonaktifkan karena mode 'Sembunyikan Nominal Anggaran' sedang aktif. Silakan matikan saklar di atas untuk melihat analisis kembali.")
             else:
