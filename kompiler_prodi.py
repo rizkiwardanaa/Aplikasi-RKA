@@ -61,7 +61,8 @@ USER_CREDENTIALS = {
     "sasing": {"password": "123", "role": "prodi", "nama_tampil": "Sastra Inggris"},
     "etno": {"password": "123", "role": "prodi", "nama_tampil": "Etnomusikologi"},
     "tari": {"password": "123", "role": "prodi", "nama_tampil": "Tari"},
-    "kajian": {"password": "123", "role": "prodi", "nama_tampil": "Kajian Budaya (S2)"}
+    "kajian": {"password": "123", "role": "prodi", "nama_tampil": "Kajian Budaya (S2)"},
+    "p2mf": {"password": "123", "role": "prodi", "nama_tampil": "Pusat Penjaminan Mutu Fakultas"}
 }
 
 if "logged_in" not in st.session_state:
