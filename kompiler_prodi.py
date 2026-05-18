@@ -95,7 +95,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# FUNGSI CETAK LAPORAN (HTML/PDF CANGGIH DENGAN KOP SURAT)
+# FUNGSI CETAK LAPORAN (HTML/PDF DENGAN LINK REKAYASA LOGO LATEST)
 # ==========================================
 def generate_html_report(df_prodi, nama_prodi, hidden=False):
     html = f"""
@@ -112,31 +112,33 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
         *, *::before, *::after {{ box-sizing: border-box; }}
         body {{ font-family: 'Arial', sans-serif; color: #000; line-height: 1.4; margin: 0; padding: 0; font-size: 11pt; }}
         
-        /* HEADER - KOP SURAT */
+        /* HEADER - KOP SURAT BERSIH */
         .kop-surat {{ 
             display: flex;
             align-items: center;
             justify-content: center;
             border-bottom: 4px solid #000; 
-            padding-bottom: 5px; 
-            margin-bottom: 20px; 
+            padding-bottom: 8px; 
+            margin-bottom: 25px; 
             position: relative;
         }}
         .kop-logo {{
             position: absolute;
             left: 0;
-            top: 0;
-            width: 90px;
+            top: 5px;
+            width: 85px;
+            height: auto;
         }}
         .kop-teks {{
             text-align: center;
             font-family: 'Times New Roman', Times, serif;
             flex-grow: 1;
+            padding-left: 95px; /* Memberi ruang agar teks tidak tertabrak logo di kiri */
         }}
-        .kop-teks h1 {{ font-size: 16pt; margin: 0; font-weight: normal; }}
-        .kop-teks h2 {{ font-size: 16pt; margin: 0; font-weight: normal; text-transform: uppercase; }}
-        .kop-teks h3 {{ font-size: 18pt; margin: 0; font-weight: bold; text-transform: uppercase; }}
-        .kop-teks p {{ font-size: 11pt; margin: 2px 0 0 0; }}
+        .kop-teks h1 {{ font-size: 15pt; margin: 0; font-weight: normal; letter-spacing: 0.3px; }}
+        .kop-teks h2 {{ font-size: 15pt; margin: 0; font-weight: normal; text-transform: uppercase; }}
+        .kop-teks h3 {{ font-size: 17pt; margin: 0; font-weight: bold; text-transform: uppercase; }}
+        .kop-teks p {{ font-size: 10.5pt; margin: 1px 0 0 0; font-family: 'Arial', sans-serif; }}
         
         /* KONTEN LAPORAN */
         .judul-laporan {{ text-align: center; margin-bottom: 25px; }}
@@ -157,7 +159,7 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
     </head>
     <body>
         <div class="kop-surat">
-            <img src="https://drive.google.com/uc?export=view&id=13kT8UkeAomtnzXVMaVRi9KWrU2IceX4r" class="kop-logo" alt="Logo Unmul">
+            <img src="https://lh3.googleusercontent.com/d/13kT8UkeAomtnzXVMaVRi9KWrU2IceX4r" class="kop-logo" alt="Logo Unmul">
             <div class="kop-teks">
                 <h1>KEMENTERIAN PENDIDIKAN TINGGI, SAINS,</h1>
                 <h1>DAN TEKNOLOGI</h1>
@@ -242,7 +244,7 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
     return html.replace(',', '.')
 
 # ==========================================
-# TAMPILAN PRODI
+# 5A. TAMPILAN PRODI
 # ==========================================
 if st.session_state["role"] == "prodi":
     st.title(f"📍 Panel Usulan: {st.session_state['nama_user']}")
@@ -276,6 +278,7 @@ if st.session_state["role"] == "prodi":
         st.markdown("### 📋 Daftar Kegiatan yang Sudah Diinput")
         if not my_data.empty:
             rekap_keg_prodi = my_data.groupby("Nama_Kegiatan")["Total_Usulan"].sum().reset_index()
+            
             for k in rekap_keg_prodi["Nama_Kegiatan"]:
                 df_k = my_data[my_data["Nama_Kegiatan"] == k].copy()
                 total_keg_val = df_k["Total_Usulan"].sum()
@@ -325,18 +328,23 @@ if st.session_state["role"] == "prodi":
                                     tgl_up = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
                                     updated_entries = pd.DataFrame([{
                                         "Tanggal_Input": tgl_up, "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": new_nama_keg.strip(),
-                                        "Rincian_Belanja": r["Rincian_Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
+                                        "Rincian_Belanja": r["Rincian Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
                                         "Harga_Satuan": r["Harga_Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
                                         "Prioritas": new_prio, "Status": "Menunggu Review", "Catatan_Fakultas": "-",
                                         "File_TOR": df_k["File_TOR"].iloc[0] if "File_TOR" in df_k.columns else "-"
                                     } for _, r in valid_edited.iterrows()])
                                     df_usulan = pd.concat([df_usulan, updated_entries], ignore_index=True)
-                                save_data(df_usulan); st.success("Perubahan usulan disimpan!"); st.rerun()
+                                    
+                                save_data(df_usulan)
+                                st.success("Perubahan usulan disimpan!")
+                                st.rerun()
                                 
                         with c_btn2:
                             if st.button("🚨 Hapus Seluruh Kegiatan", key=f"del_prod_dash_{k}", type="secondary"):
                                 df_usulan = df_usulan[~((df_usulan["Program_Studi"] == st.session_state["nama_user"]) & (df_usulan["Nama_Kegiatan"] == k))]
-                                save_data(df_usulan); st.success("Seluruh kegiatan berhasil dihapus!"); st.rerun()
+                                save_data(df_usulan)
+                                st.success("Seluruh kegiatan berhasil dihapus!")
+                                st.rerun()
                     else:
                         st.info(f"🔒 Data tidak dapat diedit/dihapus karena telah menerima keputusan Fakultas (**{status_keg}**).")
                         st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({
@@ -364,7 +372,7 @@ if st.session_state["role"] == "prodi":
                     new_data = pd.DataFrame([{
                         "Tanggal_Input": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"), "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": nama_keg,
                         "Rincian_Belanja": r["Rincian Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
-                        "Harga_Satuan": r["Harga Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
+                        "Harga_Satuan": r["Harga Satuan"], "Total_Usulan": r["Volume"] * r["Harga Satuan"],
                         "Prioritas": "Sedang", "Status": "Menunggu Review", "Catatan_Fakultas": "-", "File_TOR": path_tor
                     } for _, r in valid.iterrows()])
                     df_usulan = pd.concat([df_usulan, new_data], ignore_index=True)
@@ -379,7 +387,8 @@ if st.session_state["role"] == "prodi":
             st.info(f"Status: {status_saat_ini} | Catatan: {df_curr['Catatan_Fakultas'].iloc[0]}")
             
             if status_saat_ini in ["Menunggu Review", "Perlu Revisi"]:
-                st.warning("⚠️ Silakan perbaiki rincian biaya di bawah ini dan klik 'Kirim Ulang Revisi'.")
+                st.warning("⚠️ Silakan perbaiki rincian biaya di bawah ini (Centang 'Hapus?' untuk membuang rincian, atau tambah baris kosong di bawah) dan klik 'Kirim Ulang Revisi'.")
+                
                 df_to_edit = df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan"]].reset_index(drop=True)
                 df_to_edit.insert(0, "Hapus", False)
                 
@@ -408,7 +417,9 @@ if st.session_state["role"] == "prodi":
                                 "File_TOR": df_curr["File_TOR"].iloc[0]
                             })
                         df_usulan = pd.concat([df_usulan, pd.DataFrame(rev_entries)], ignore_index=True)
-                    save_data(df_usulan); st.success("Revisi berhasil dikirim!"); st.rerun()
+                        
+                    save_data(df_usulan)
+                    st.success("Revisi berhasil dikirim!"); st.rerun()
             else:
                 st.info(f"🔒 Data tidak dapat diedit karena status saat ini: **{status_saat_ini}**.")
                 st.table(df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({
@@ -446,6 +457,7 @@ elif st.session_state["role"] == "admin":
             st.subheader("🏙️ Rekapitulasi Anggaran Per Prodi")
             rekap_semua = df_usulan.groupby("Program_Studi")["Total_Usulan"].sum().reset_index()
             rekap_semua.columns = ["Program Studi", "Total Usulan (Rp)"]
+            
             if sembunyikan_nilai:
                 rekap_semua["Total Usulan (Rp)"] = "Rp ***"
                 st.table(rekap_semua)
@@ -453,14 +465,18 @@ elif st.session_state["role"] == "admin":
                 st.table(rekap_semua.style.format({"Total Usulan (Rp)": format_rupiah}))
 
             st.markdown("---")
+            
             st.subheader("🔍 Detail Kegiatan Per Prodi")
             prodi_sel = st.selectbox("Pilih Prodi untuk melihat daftar kegiatan:", sorted(df_usulan["Program_Studi"].unique()))
             df_p = df_usulan[df_usulan["Program_Studi"] == prodi_sel]
             
             rekap_keg_prodi = df_p.groupby("Nama_Kegiatan")["Total_Usulan"].sum().reset_index()
+            st.write(f"Berikut adalah daftar kegiatan dari **{prodi_sel}**:")
+            
             for k in rekap_keg_prodi["Nama_Kegiatan"]:
                 df_k = df_p[df_p["Nama_Kegiatan"] == k].copy()
                 total_keg_val = df_k["Total_Usulan"].sum()
+                
                 teks_nominal_expander = "Rp ***" if sembunyikan_nilai else f"Rp {total_keg_val:,.0f}".replace(',', '.')
                 
                 with st.expander(f"📌 {k.upper()} | Total Usulan: {teks_nominal_expander} | Status: {df_k['Status'].iloc[0]}"):
@@ -470,7 +486,8 @@ elif st.session_state["role"] == "admin":
                             st.download_button("📥 Download TOR", f, file_name=os.path.basename(path), key=f"dl_{prodi_sel}_{k}")
                     
                     c1, c2 = st.columns([1, 2])
-                    n_s = c1.selectbox("Update Status:", ["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"], index=["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"].index(df_k["Status"].iloc[0]), key=f"s_{prodi_sel}_{k}")
+                    n_s = c1.selectbox("Update Status:", ["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"], 
+                                     index=["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"].index(df_k["Status"].iloc[0]), key=f"s_{prodi_sel}_{k}")
                     n_n = c2.text_area("Catatan Fakultas:", value=df_k["Catatan_Fakultas"].iloc[0], key=f"n_{prodi_sel}_{k}")
                     
                     if st.button("Simpan Hasil Review", key=f"b_{prodi_sel}_{k}"):
@@ -495,6 +512,7 @@ elif st.session_state["role"] == "admin":
 
         with tab_ins:
             st.subheader("🤖 Analisis & Insight Pintar")
+            
             if sembunyikan_nilai:
                 st.warning("⚠️ Insight angka dan grafik dinonaktifkan karena mode 'Sembunyikan Nominal Anggaran' sedang aktif.")
             else:
@@ -519,24 +537,40 @@ elif st.session_state["role"] == "admin":
                     st.bar_chart(rekap_ins.set_index("Program_Studi")["Total_Usulan"])
                     
                     st.markdown("### 📑 Rekapitulasi Rinci Per Program Studi")
+                    st.caption("Tabel di bawah ini merangkum total anggaran, jumlah kegiatan, dan status review untuk masing-masing Program Studi.")
+                    
                     status_pivot = pd.crosstab(df_usulan["Program_Studi"], df_usulan["Status"]).reset_index()
-                    rekap_detail = df_usulan.groupby("Program_Studi").agg(Total_Anggaran=("Total_Usulan", "sum"), Jumlah_Kegiatan=("Nama_Kegiatan", "nunique")).reset_index()
+                    rekap_detail = df_usulan.groupby("Program_Studi").agg(
+                        Total_Anggaran=("Total_Usulan", "sum"),
+                        Jumlah_Kegiatan=("Nama_Kegiatan", "nunique")
+                    ).reset_index()
+                    
                     rekap_final = pd.merge(rekap_detail, status_pivot, on="Program_Studi", how="left").fillna(0)
                     
                     for stat in ["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"]:
-                        if stat not in rekap_final.columns: rekap_final[stat] = 0
+                        if stat not in rekap_final.columns:
+                            rekap_final[stat] = 0
                             
-                    rekap_final.rename(columns={"Program_Studi": "Program Studi", "Jumlah_Kegiatan": "Jml Kegiatan", "Total_Anggaran": "Total Anggaran (Rp)"}, inplace=True)
+                    rekap_final.rename(columns={
+                        "Program_Studi": "Program Studi", 
+                        "Jumlah_Kegiatan": "Jml Kegiatan",
+                        "Total_Anggaran": "Total Anggaran (Rp)"
+                    }, inplace=True)
+                    
                     kolom_tampil = ["Program Studi", "Jml Kegiatan", "Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak", "Total Anggaran (Rp)"]
                     
-                    st.dataframe(rekap_final[kolom_tampil].style.format({"Total Anggaran (Rp)": format_rupiah}), hide_index=True, use_container_width=True,
+                    st.dataframe(
+                        rekap_final[kolom_tampil].style.format({"Total Anggaran (Rp)": format_rupiah}),
+                        hide_index=True,
+                        use_container_width=True,
                         column_config={
                             "Jml Kegiatan": st.column_config.NumberColumn("Jml Kegiatan", format="%d"),
                             "Menunggu Review": st.column_config.NumberColumn("Menunggu Review", format="%d"),
                             "Disetujui": st.column_config.NumberColumn("Disetujui", format="%d"),
                             "Perlu Revisi": st.column_config.NumberColumn("Perlu Revisi", format="%d"),
                             "Ditolak": st.column_config.NumberColumn("Ditolak", format="%d")
-                        })
+                        }
+                    )
                 else:
                     st.info("Data belum tersedia untuk analisis.")
 
