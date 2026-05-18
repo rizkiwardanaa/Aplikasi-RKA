@@ -106,10 +106,8 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
     <style>
         @page {{ 
             size: A4; 
-            margin: 15mm 20mm 35mm 20mm; /* Ruang lebih besar di bawah untuk footer */
-            @bottom-center {{
-                content: element(footer);
-            }}
+            margin: 15mm 20mm; 
+            @bottom-right {{ content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #718096; font-family: 'Arial', sans-serif; }}
         }}
         *, *::before, *::after {{ box-sizing: border-box; }}
         body {{ font-family: 'Arial', sans-serif; color: #000; line-height: 1.4; margin: 0; padding: 0; font-size: 11pt; }}
@@ -140,55 +138,6 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
         .kop-teks h3 {{ font-size: 18pt; margin: 0; font-weight: bold; text-transform: uppercase; }}
         .kop-teks p {{ font-size: 11pt; margin: 2px 0 0 0; }}
         
-        /* FOOTER SURAT */
-        div.footer-dokumen {{
-            position: running(footer);
-            width: 100%;
-            text-align: center;
-            font-family: 'Arial', sans-serif;
-            font-size: 10pt;
-            padding-top: 10px;
-        }}
-        .footer-line {{
-            border-top: 3px solid #808080;
-            margin-bottom: 5px;
-            position: relative;
-        }}
-        .blu-logo {{
-            position: absolute;
-            right: 0;
-            top: -50px;
-            width: 70px;
-        }}
-        .footer-tagline {{
-            color: #7ab2c1;
-            font-weight: bold;
-            font-size: 11pt;
-            margin-bottom: 5px;
-        }}
-        .footer-sosmed {{
-            color: #808080;
-            font-size: 10pt;
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-        }}
-        .footer-sosmed span {{
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }}
-        .icon-bulat {{
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            border: 1px solid #808080;
-            text-align: center;
-            line-height: 14px;
-            font-size: 10px;
-        }}
-
         /* KONTEN LAPORAN */
         .judul-laporan {{ text-align: center; margin-bottom: 25px; }}
         .judul-laporan h3 {{ font-size: 14pt; margin: 0 0 5px 0; text-transform: uppercase; }}
@@ -207,9 +156,8 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
     </style>
     </head>
     <body>
-
         <div class="kop-surat">
-            <img src="https://drive.google.com/file/d/13kT8UkeAomtnzXVMaVRi9KWrU2IceX4r/view?usp=sharing" class="kop-logo" alt="Logo Unmul">
+            <img src="https://drive.google.com/uc?export=view&id=13kT8UkeAomtnzXVMaVRi9KWrU2IceX4r" class="kop-logo" alt="Logo Unmul">
             <div class="kop-teks">
                 <h1>KEMENTERIAN PENDIDIKAN TINGGI, SAINS,</h1>
                 <h1>DAN TEKNOLOGI</h1>
@@ -416,7 +364,7 @@ if st.session_state["role"] == "prodi":
                     new_data = pd.DataFrame([{
                         "Tanggal_Input": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"), "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": nama_keg,
                         "Rincian_Belanja": r["Rincian Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
-                        "Harga_Satuan": r["Harga Satuan"], "Total_Usulan": r["Volume"] * r["Harga Satuan"],
+                        "Harga_Satuan": r["Harga Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
                         "Prioritas": "Sedang", "Status": "Menunggu Review", "Catatan_Fakultas": "-", "File_TOR": path_tor
                     } for _, r in valid.iterrows()])
                     df_usulan = pd.concat([df_usulan, new_data], ignore_index=True)
@@ -592,7 +540,6 @@ elif st.session_state["role"] == "admin":
                 else:
                     st.info("Data belum tersedia untuk analisis.")
 
-            # --- FUNGSI FORMAT HIRARKI (AGAR EXCEL/LAYAR TIDAK BERANTAKAN) ---
             def format_df_ke_hirarki(df_mentah, hidden=False):
                 df_h = df_mentah.sort_values(by=["Program_Studi", "Nama_Kegiatan"]).copy()
                 if not hidden:
@@ -631,21 +578,17 @@ elif st.session_state["role"] == "admin":
                 df_hirarki_prodi = format_df_ke_hirarki(df_ins_p, hidden=sembunyikan_nilai)
                 st.dataframe(df_hirarki_prodi, hide_index=True, use_container_width=True)
                 
-                # TOMBOL DOWNLOAD
                 col_dl1, col_dl2, col_dl3 = st.columns(3)
                 
-                # 1. Download Excel Prodi
                 with col_dl1:
                     excel_prodi = generate_excel(df_hirarki_prodi, nama_sheet=prodi_ins_sel[:30])
                     st.download_button("📥 Excel: Laporan Prodi", data=excel_prodi, file_name=f"Laporan_{prodi_ins_sel}_2026.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
-                # 2. Download Excel Semua Prodi
                 with col_dl2:
                     df_hirarki_semua = format_df_ke_hirarki(df_usulan, hidden=sembunyikan_nilai)
                     excel_semua = generate_excel(df_hirarki_semua, nama_sheet="Seluruh_Fakultas")
                     st.download_button("📥 Excel: Laporan Fakultas", data=excel_semua, file_name="Laporan_FIB_Seluruh_Prodi_2026.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
-                # 3. Download Print-Ready PDF/HTML Prodi
                 with col_dl3:
                     html_pdf_ready = generate_html_report(df_ins_p, prodi_ins_sel, hidden=sembunyikan_nilai)
                     st.download_button("🖨️ PDF: Laporan Print (Web)", data=html_pdf_ready.encode('utf-8'), file_name=f"Laporan_Cetak_{prodi_ins_sel}.html", mime="text/html", help="Buka file ini di browser, lalu tekan Ctrl+P untuk menyimpannya sebagai PDF dengan desain rapih.")
