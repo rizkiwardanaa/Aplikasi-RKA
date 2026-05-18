@@ -184,7 +184,7 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
     
     for prodi in prodi_list:
         # Tampilkan Sub-Header Jika laporannya "Seluruh Fakultas"
-        if nama_prodi == "Seluruh Program Studi":
+        if nama_prodi == "Seluruh Fakultas":
             html += f"<div class='sub-judul-prodi'>▶ PROGRAM STUDI: {prodi}</div>"
             
         df_p = df_data[df_data["Program_Studi"] == prodi]
