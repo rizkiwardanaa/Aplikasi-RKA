@@ -142,9 +142,7 @@ if st.session_state["role"] == "prodi":
                     if catatan_keg != "-":
                         st.warning(f"**Catatan Fakultas:** {catatan_keg}")
                     
-                    # LOGIKA PENGUNCIAN: Hanya bisa diedit jika Menunggu Review atau Perlu Revisi
                     if status_keg in ["Menunggu Review", "Perlu Revisi"]:
-                        # Form untuk edit Nama Kegiatan dan Prioritas
                         col_edit1, col_edit2 = st.columns([2, 1])
                         new_nama_keg = col_edit1.text_input("Nama Kegiatan:", value=k, key=f"edit_nama_{k}")
                         
@@ -212,9 +210,7 @@ if st.session_state["role"] == "prodi":
                                 save_data(df_usulan)
                                 st.success("Seluruh kegiatan berhasil dihapus!")
                                 st.rerun()
-                    
                     else:
-                        # TAMPILAN JIKA STATUS DISETUJUI / DITOLAK (TERKUNCI)
                         st.info(f"🔒 Data tidak dapat diedit/dihapus karena telah menerima keputusan Fakultas (**{status_keg}**).")
                         st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]], hide_index=True, use_container_width=True)
 
@@ -258,7 +254,6 @@ if st.session_state["role"] == "prodi":
             status_saat_ini = df_curr['Status'].iloc[0]
             st.info(f"Status: {status_saat_ini} | Catatan: {df_curr['Catatan_Fakultas'].iloc[0]}")
             
-            # LOGIKA PENGUNCIAN: Hanya bisa diedit jika Menunggu Review atau Perlu Revisi
             if status_saat_ini in ["Menunggu Review", "Perlu Revisi"]:
                 st.warning("⚠️ Silakan perbaiki rincian biaya di bawah ini (Centang 'Hapus?' untuk membuang rincian, atau tambah baris kosong di bawah) dan klik 'Kirim Ulang Revisi'.")
                 
@@ -408,5 +403,43 @@ elif st.session_state["role"] == "admin":
                     st.markdown("### 📊 Perbandingan Anggaran antar Prodi")
                     rekap_ins = df_usulan.groupby("Program_Studi")["Total_Usulan"].sum().reset_index()
                     st.bar_chart(rekap_ins.set_index("Program_Studi")["Total_Usulan"])
+                    
+                    # --- FITUR BARU: TABEL KLASIFIKASI RAPI PER PRODI ---
+                    st.markdown("### 📑 Rekapitulasi Rinci Per Program Studi")
+                    st.caption("Tabel di bawah ini merangkum total anggaran, jumlah kegiatan, dan status review untuk masing-masing Program Studi.")
+                    
+                    status_pivot = pd.crosstab(df_usulan["Program_Studi"], df_usulan["Status"]).reset_index()
+                    rekap_detail = df_usulan.groupby("Program_Studi").agg(
+                        Total_Anggaran=("Total_Usulan", "sum"),
+                        Jumlah_Kegiatan=("Nama_Kegiatan", "nunique")
+                    ).reset_index()
+                    
+                    rekap_final = pd.merge(rekap_detail, status_pivot, on="Program_Studi", how="left").fillna(0)
+                    
+                    for stat in ["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"]:
+                        if stat not in rekap_final.columns:
+                            rekap_final[stat] = 0
+                            
+                    rekap_final.rename(columns={
+                        "Program_Studi": "Program Studi", 
+                        "Jumlah_Kegiatan": "Jml Kegiatan",
+                        "Total_Anggaran": "Total Anggaran (Rp)"
+                    }, inplace=True)
+                    
+                    kolom_tampil = ["Program Studi", "Jml Kegiatan", "Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak", "Total Anggaran (Rp)"]
+                    
+                    st.dataframe(
+                        rekap_final[kolom_tampil],
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Total Anggaran (Rp)": st.column_config.NumberColumn("Total Anggaran (Rp)", format="Rp %d"),
+                            "Jml Kegiatan": st.column_config.NumberColumn("Jml Kegiatan", format="%d"),
+                            "Menunggu Review": st.column_config.NumberColumn("Menunggu Review", format="%d"),
+                            "Disetujui": st.column_config.NumberColumn("Disetujui", format="%d"),
+                            "Perlu Revisi": st.column_config.NumberColumn("Perlu Revisi", format="%d"),
+                            "Ditolak": st.column_config.NumberColumn("Ditolak", format="%d")
+                        }
+                    )
                 else:
                     st.info("Data belum tersedia untuk analisis.")
