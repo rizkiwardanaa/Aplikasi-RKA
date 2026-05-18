@@ -126,7 +126,7 @@ def generate_html_report(df_prodi, nama_prodi, hidden=False):
             position: absolute;
             left: 0;
             top: 5px;
-            width: 85px;
+            width: 120px;
             height: auto;
         }}
         .kop-teks {{
