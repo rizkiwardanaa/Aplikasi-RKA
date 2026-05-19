@@ -97,6 +97,19 @@ def split_kode(teks):
         return s, ""
     return "", s
 
+# FUNGSI BARU: MENGGABUNGKAN STRING VOLUME DAN SATUAN
+def get_vol_sat_combined(v1, s1, v2, s2):
+    v1_str = str(v1).replace(".0", "") if pd.notna(v1) else "0"
+    s1_str = str(s1).strip() if pd.notna(s1) else ""
+    v2_str = str(v2).replace(".0", "") if pd.notna(v2) else "0"
+    s2_str = str(s2).strip() if pd.notna(s2) else ""
+    
+    # Jika satuan 2 dibiarkan kosong atau strip (-)
+    if s2_str in ["", "-"] or v2_str == "0" or v2_str == "":
+        return f"{v1_str} {s1_str}"
+    # Jika ada dua volume
+    return f"{v1_str} {s1_str} x {v2_str} {s2_str}"
+
 # ==========================================
 # 2. DATABASE USER & LOGIN
 # ==========================================
@@ -527,7 +540,7 @@ elif st.session_state["role"] == "admin":
                     with col_pdf2: st.download_button("📑 PDF: Laporan Fakultas (Web)", data=generate_html_report(df_usulan, "Seluruh Fakultas", hidden=sembunyikan_nilai).encode('utf-8'), file_name="Cetak_FIB_Semua.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
 
     # ----------------------------------------------------
-    # MENU 2: PENGOLAH RAB (PEMBARUAN KODE & PAGU OTOMATIS)
+    # MENU 2: PENGOLAH RAB (PEMBARUAN KOLOM VOL & SATUAN MERGE)
     # ----------------------------------------------------
     elif menu_pilihan == "2. Pengolah Dokumen RAB":
         st.title("📄 Pengolah Dokumen RAB Universitas")
@@ -588,7 +601,6 @@ elif st.session_state["role"] == "admin":
                 col_u1, col_u2 = st.columns(2)
                 rab_kegiatan = col_u1.text_input("Nama Kegiatan", placeholder="Contoh: Pemeliharaan Alat Operasional Pendukung TIK")
                 
-                # REVISI 3: AUTO-FILL SASARAN KEGIATAN BERDASARKAN KRO
                 _, kro_narasi = split_kode(pilih_kro) if pilih_kro else ("", "")
                 kro_narasi_bersih = kro_narasi.strip("() ")
                 default_sasaran = f"Peningkatan {kro_narasi_bersih}" if kro_narasi_bersih else ""
@@ -598,14 +610,14 @@ elif st.session_state["role"] == "admin":
                 rab_satuan = col_u2.text_input("Satuan Ukur", placeholder="Contoh: Layanan / Bulan")
 
                 st.markdown("---")
-                st.subheader("3. Rincian Belanja (Pengali Volume & Satuan)")
+                st.subheader("3. Rincian Belanja")
                 
                 opsi_akun = []
                 if not df_m_akun.empty:
                     for _, row in df_m_akun.iterrows():
                         opsi_akun.append(f"{row['Account_Code']} - {row['Account_Name']}")
                 
-                template_detail = pd.DataFrame([{"Akun Belanja": opsi_akun[0] if opsi_akun else "", "Uraian Belanja": "", "Vol 1": 1, "Sat 1": "Unit", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
+                template_detail = pd.DataFrame([{"Akun Belanja": opsi_akun[0] if opsi_akun else "", "Uraian Belanja": "", "Vol 1": 5, "Sat 1": "Paket", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
                 
                 df_input_detail = st.data_editor(
                     template_detail, num_rows="dynamic", use_container_width=True, hide_index=True, key="grid_buat_rab",
@@ -614,15 +626,17 @@ elif st.session_state["role"] == "admin":
                         "Uraian Belanja": st.column_config.TextColumn("Detail / Uraian", required=True),
                         "Vol 1": st.column_config.NumberColumn("Vol 1", min_value=1, required=True),
                         "Sat 1": st.column_config.TextColumn("Sat 1", required=True),
-                        "Vol 2": st.column_config.NumberColumn("Vol 2", min_value=1, required=True),
-                        "Sat 2": st.column_config.TextColumn("Sat 2"),
+                        "Vol 2": st.column_config.NumberColumn("Vol 2", min_value=0),
+                        "Sat 2": st.column_config.TextColumn("Sat 2 (Biarkan '-' jika tak ada)"),
                         "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, required=True)
                     }
                 )
 
                 df_input_detail["Vol_1_Num"] = pd.to_numeric(df_input_detail["Vol 1"]).fillna(1)
                 df_input_detail["Vol_2_Num"] = pd.to_numeric(df_input_detail["Vol 2"]).fillna(1)
+                df_input_detail.loc[df_input_detail["Vol_2_Num"] == 0, "Vol_2_Num"] = 1 # Hindari kali 0
                 df_input_detail["Harga_Num"] = pd.to_numeric(df_input_detail["Harga Satuan"]).fillna(0)
+                
                 total_rab_live = (df_input_detail["Vol_1_Num"] * df_input_detail["Vol_2_Num"] * df_input_detail["Harga_Num"]).sum()
                 
                 st.markdown("#### 💰 Akumulasi Anggaran Alokasi Dana")
@@ -672,39 +686,33 @@ elif st.session_state["role"] == "admin":
                 head_terpilih = df_rab_utama[df_rab_utama["ID_RAB"] == pilih_arsip]
                 detail_terpilih = df_rab_detail[df_rab_detail["ID_RAB"] == pilih_arsip]
                 
-                def get_vol_sat_str(v1, s1, v2, s2):
-                    if pd.notna(v2) and str(v2).strip() not in ["", "-", "1", "1.0"] and pd.notna(s2) and str(s2).strip() not in ["", "-", "1", "1.0"]:
-                        return f"{v1} x {v2}", f"{s1} x {s2}"
-                    return f"{v1}", f"{s1}"
-
+                # PEMBARUAN: PENGGABUNGAN VOLUME DAN SATUAN DI WEB VIEW
                 df_view = detail_terpilih.copy()
                 df_view['Kode Akun'] = df_view['Akun_Belanja'].apply(lambda x: split_kode(x)[0])
                 df_view['Nama Akun Belanja'] = df_view['Akun_Belanja'].apply(lambda x: split_kode(x)[1])
-                df_view['Volume Perhitungan'] = df_view.apply(lambda r: get_vol_sat_str(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])[0], axis=1)
-                df_view['Satuan Perhitungan'] = df_view.apply(lambda r: get_vol_sat_str(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])[1], axis=1)
+                df_view['Volume & Satuan'] = df_view.apply(lambda r: get_vol_sat_combined(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2']), axis=1)
                 
                 st.markdown(f"**Klasifikasi Dokumen:** {head_terpilih['KRO'].iloc[0]} ➔ {head_terpilih['RO'].iloc[0]} ➔ {head_terpilih['Komponen'].iloc[0]}")
                 st.markdown(f"**Total Anggaran Terakumulasi:** Rp {format_rupiah(detail_terpilih['Total_Biaya'].sum())}")
                 
-                st.dataframe(df_view[["Kode Akun", "Nama Akun Belanja", "Uraian", "Volume Perhitungan", "Satuan Perhitungan", "Harga_Satuan", "Total_Biaya"]].style.format({"Harga_Satuan": format_rupiah, "Total_Biaya": format_rupiah}), hide_index=True, use_container_width=True)
+                st.dataframe(df_view[["Kode Akun", "Nama Akun Belanja", "Uraian", "Volume & Satuan", "Harga_Satuan", "Total_Biaya"]].style.format({"Harga_Satuan": format_rupiah, "Total_Biaya": format_rupiah}), hide_index=True, use_container_width=True)
                 
-                # --- MESIN CETAK EXCEL HI-RESO (REVISI KODE TERPISAH) ---
+                # --- MESIN CETAK EXCEL ---
                 def export_excel_rab(df_header, df_items):
                     import openpyxl
                     from openpyxl.styles import Font, Alignment, Border, Side
                     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "RAB Export"
                     
-                    ws.column_dimensions['A'].width = 18 # Kolom Kode Murni
-                    ws.column_dimensions['B'].width = 50 # Kolom Rincian/Uraian Murni
-                    ws.column_dimensions['C'].width = 15 
-                    ws.column_dimensions['D'].width = 15 
-                    ws.column_dimensions['E'].width = 18 
-                    ws.column_dimensions['F'].width = 18 
-
+                    ws.column_dimensions['A'].width = 18 # Kode
+                    ws.column_dimensions['B'].width = 50 # Uraian
+                    ws.column_dimensions['C'].width = 25 # Volume & Satuan (Diperlebar)
+                    ws.column_dimensions['D'].width = 18 # Harga
+                    ws.column_dimensions['E'].width = 18 # Total
+                    
                     font_bold = Font(bold=True); font_header = Font(bold=True, size=12); align_center = Alignment(horizontal="center", vertical="center")
                     border_all = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
-                    ws.merge_cells('A1:F1')
+                    ws.merge_cells('A1:E1')
                     ws['A1'] = "RINCIAN ANGGARAN BIAYA (RAB) FAKULTAS ILMU BUDAYA\nTAHUN ANGGARAN 2027"
                     ws['A1'].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                     ws['A1'].font = font_header
@@ -722,11 +730,11 @@ elif st.session_state["role"] == "admin":
                     for label, val in meta_rows:
                         ws.cell(row=rp, column=1, value=label).font = font_bold
                         ws.cell(row=rp, column=2, value=val)
-                        ws.merge_cells(start_row=rp, start_column=2, end_row=rp, end_column=6)
+                        ws.merge_cells(start_row=rp, start_column=2, end_row=rp, end_column=5)
                         rp += 1
 
                     rp += 1
-                    for col_idx, text in enumerate(["Kode", "Rincian Belanja", "Volume", "Satuan", "Harga Satuan", "Jumlah Biaya"], start=1):
+                    for col_idx, text in enumerate(["Kode", "Rincian Belanja", "Volume & Satuan", "Harga Satuan", "Jumlah Biaya"], start=1):
                         cell = ws.cell(row=rp, column=col_idx, value=text); cell.font = font_bold; cell.alignment = align_center; cell.border = border_all
                     rp += 1
 
@@ -740,19 +748,19 @@ elif st.session_state["role"] == "admin":
                                 k1, k2 = kode_h.split(".")
                                 ws.cell(row=rp, column=1, value=k1).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                                 ws.cell(row=rp, column=2, value=f"{indent}{ur_h}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
-                                ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
-                                ws.cell(row=rp, column=6, value=total_seluruh).font = font_bold; ws.cell(row=rp, column=6).border = border_all; ws.cell(row=rp, column=6).number_format = '#,##0'
+                                ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all
+                                ws.cell(row=rp, column=5, value=total_seluruh).font = font_bold; ws.cell(row=rp, column=5).border = border_all; ws.cell(row=rp, column=5).number_format = '#,##0'
                                 rp += 1
                                 ws.cell(row=rp, column=1, value=k2).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                                 ws.cell(row=rp, column=2, value=f"{indent}  Subkomponen {k2}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
-                                ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
-                                ws.cell(row=rp, column=6, value=total_seluruh).font = font_bold; ws.cell(row=rp, column=6).border = border_all; ws.cell(row=rp, column=6).number_format = '#,##0'
+                                ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all
+                                ws.cell(row=rp, column=5, value=total_seluruh).font = font_bold; ws.cell(row=rp, column=5).border = border_all; ws.cell(row=rp, column=5).number_format = '#,##0'
                                 rp += 1
                             else:
                                 ws.cell(row=rp, column=1, value=kode_h).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                                 ws.cell(row=rp, column=2, value=f"{indent}{ur_h}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
-                                ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
-                                c_htot = ws.cell(row=rp, column=6, value=total_seluruh); c_htot.font = font_bold; c_htot.border = border_all; c_htot.number_format = '#,##0'
+                                ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all
+                                c_htot = ws.cell(row=rp, column=5, value=total_seluruh); c_htot.font = font_bold; c_htot.border = border_all; c_htot.number_format = '#,##0'
                                 rp += 1
 
                     for akun, group_akun in df_items.groupby("Akun_Belanja"):
@@ -760,18 +768,17 @@ elif st.session_state["role"] == "admin":
                         k_ak, u_ak = split_kode(akun)
                         ws.cell(row=rp, column=1, value=k_ak).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                         ws.cell(row=rp, column=2, value=f"      {u_ak}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
-                        ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
-                        c_akt = ws.cell(row=rp, column=6, value=tot_akun); c_akt.font = font_bold; c_akt.border = border_all; c_akt.number_format = '#,##0'
+                        ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all
+                        c_akt = ws.cell(row=rp, column=5, value=tot_akun); c_akt.font = font_bold; c_akt.border = border_all; c_akt.number_format = '#,##0'
                         rp += 1
                         
                         for _, r in group_akun.iterrows():
-                            v_str, s_str = get_vol_sat_str(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])
+                            v_sat_str = get_vol_sat_combined(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])
                             ws.cell(row=rp, column=1, value="").border = border_all
                             ws.cell(row=rp, column=2, value=f"        - {r['Uraian']}").border = border_all
-                            c_vol = ws.cell(row=rp, column=3, value=v_str); c_vol.alignment = align_center; c_vol.border = border_all
-                            c_sat = ws.cell(row=rp, column=4, value=s_str); c_sat.alignment = align_center; c_sat.border = border_all
-                            c_hrg = ws.cell(row=rp, column=5, value=r['Harga_Satuan']); c_hrg.number_format = '#,##0'; c_hrg.border = border_all
-                            c_tot = ws.cell(row=rp, column=6, value=r['Total_Biaya']); c_tot.number_format = '#,##0'; c_tot.border = border_all
+                            c_volsat = ws.cell(row=rp, column=3, value=v_sat_str); c_volsat.alignment = align_center; c_volsat.border = border_all
+                            c_hrg = ws.cell(row=rp, column=4, value=r['Harga_Satuan']); c_hrg.number_format = '#,##0'; c_hrg.border = border_all
+                            c_tot = ws.cell(row=rp, column=5, value=r['Total_Biaya']); c_tot.number_format = '#,##0'; c_tot.border = border_all
                             rp += 1
                             
                     rp += 2
@@ -781,15 +788,15 @@ elif st.session_state["role"] == "admin":
                         tgl_str = f"Samarinda, {tobj.day} {bulan_indo[tobj.month-1]} {tobj.year}"
                     except: tgl_str = f"Samarinda, {df_header['Tgl_Cetak'].iloc[0]}"
                     
-                    ws.cell(row=rp, column=5, value=tgl_str)
-                    ws.cell(row=rp+1, column=5, value=df_header['Jabatan'].iloc[0])
-                    ws.cell(row=rp+5, column=5, value=df_header['Nama_Pejabat'].iloc[0]).font = Font(underline="single", bold=True)
-                    ws.cell(row=rp+6, column=5, value=f"NIP. {df_header['NIP_Pejabat'].iloc[0]}")
+                    ws.cell(row=rp, column=4, value=tgl_str)
+                    ws.cell(row=rp+1, column=4, value=df_header['Jabatan'].iloc[0])
+                    ws.cell(row=rp+5, column=4, value=df_header['Nama_Pejabat'].iloc[0]).font = Font(underline="single", bold=True)
+                    ws.cell(row=rp+6, column=4, value=f"NIP. {df_header['NIP_Pejabat'].iloc[0]}")
 
                     output = BytesIO(); wb.save(output)
                     return output.getvalue()
 
-                # --- MESIN CETAK PDF HI-RESO (REVISI KODE TERPISAH) ---
+                # --- MESIN CETAK PDF ---
                 def export_pdf_rab(df_header, df_items):
                     total_seluruh = df_items["Total_Biaya"].sum()
                     try: 
@@ -824,24 +831,24 @@ elif st.session_state["role"] == "admin":
                         <tr><td class="bold">Alokasi Dana (Total Belanja)</td><td>:</td><td>Rp. {format_rupiah(total_seluruh)}</td></tr>
                     </table>
                     <table class="tabel-utama">
-                        <tr><th>Kode</th><th>Rincian Belanja</th><th>Volume</th><th>Satuan</th><th>Harga Satuan</th><th>Jumlah Biaya</th></tr>
+                        <tr><th>Kode</th><th>Rincian Belanja</th><th>Volume & Satuan</th><th>Harga Satuan</th><th>Jumlah Biaya</th></tr>
                     """
                     for head_col, indent in [('RO', ""), ('Komponen', "  "), ('Sub_Komponen', "    ")]:
                         if df_header[head_col].iloc[0] and str(df_header[head_col].iloc[0]).strip() not in ["", "-", "Tidak Ada Sub-Komponen"]:
                             k, u = split_kode(df_header[head_col].iloc[0])
                             if "." in k and len(k.split(".")) == 2 and len(k.split(".")[0]) == 3:
                                 k1, k2 = k.split(".")
-                                html += f"<tr><td class='bold'>{k1}</td><td class='bold'>{indent}{u}</td><td></td><td></td><td></td><td class='bold text-right'>{format_rupiah(total_seluruh)}</td></tr>"
-                                html += f"<tr><td class='bold'>{k2}</td><td class='bold'>{indent}  Subkomponen {k2}</td><td></td><td></td><td></td><td class='bold text-right'>{format_rupiah(total_seluruh)}</td></tr>"
+                                html += f"<tr><td class='bold'>{k1}</td><td class='bold'>{indent}{u}</td><td></td><td></td><td class='bold text-right'>{format_rupiah(total_seluruh)}</td></tr>"
+                                html += f"<tr><td class='bold'>{k2}</td><td class='bold'>{indent}  Subkomponen {k2}</td><td></td><td></td><td class='bold text-right'>{format_rupiah(total_seluruh)}</td></tr>"
                             else:
-                                html += f"<tr><td class='bold'>{k}</td><td class='bold'>{indent}{u}</td><td></td><td></td><td></td><td class='bold text-right'>{format_rupiah(total_seluruh)}</td></tr>"
+                                html += f"<tr><td class='bold'>{k}</td><td class='bold'>{indent}{u}</td><td></td><td></td><td class='bold text-right'>{format_rupiah(total_seluruh)}</td></tr>"
                     
                     for akun, group_akun in df_items.groupby("Akun_Belanja"):
                         k_ak, u_ak = split_kode(akun)
-                        html += f"<tr><td class='bold'>{k_ak}</td><td class='bold'>      {u_ak}</td><td></td><td></td><td></td><td class='bold text-right'>{format_rupiah(group_akun['Total_Biaya'].sum())}</td></tr>"
+                        html += f"<tr><td class='bold'>{k_ak}</td><td class='bold'>      {u_ak}</td><td></td><td></td><td class='bold text-right'>{format_rupiah(group_akun['Total_Biaya'].sum())}</td></tr>"
                         for _, r in group_akun.iterrows():
-                            v_str, s_str = get_vol_sat_str(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])
-                            html += f"<tr><td></td><td>        - {r['Uraian']}</td><td class='text-center'>{v_str}</td><td class='text-center'>{s_str}</td><td class='text-right'>{format_rupiah(r['Harga_Satuan'])}</td><td class='text-right'>{format_rupiah(r['Total_Biaya'])}</td></tr>"
+                            v_sat_str = get_vol_sat_combined(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])
+                            html += f"<tr><td></td><td>        - {r['Uraian']}</td><td class='text-center'>{v_sat_str}</td><td class='text-right'>{format_rupiah(r['Harga_Satuan'])}</td><td class='text-right'>{format_rupiah(r['Total_Biaya'])}</td></tr>"
                     
                     html += f"""</table>
                     <div class="ttd-box">
