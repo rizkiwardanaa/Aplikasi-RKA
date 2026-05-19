@@ -587,7 +587,13 @@ elif st.session_state["role"] == "admin":
                 st.subheader("2. Informasi Utama Kegiatan")
                 col_u1, col_u2 = st.columns(2)
                 rab_kegiatan = col_u1.text_input("Nama Kegiatan", placeholder="Contoh: Pemeliharaan Alat Operasional Pendukung TIK")
-                rab_sasaran = col_u2.text_input("Sasaran Kegiatan", placeholder="Contoh: Peningkatan Kualitas Layanan...")
+                
+                # REVISI 3: AUTO-FILL SASARAN KEGIATAN BERDASARKAN KRO
+                _, kro_narasi = split_kode(pilih_kro) if pilih_kro else ("", "")
+                kro_narasi_bersih = kro_narasi.strip("() ")
+                default_sasaran = f"Peningkatan {kro_narasi_bersih}" if kro_narasi_bersih else ""
+                
+                rab_sasaran = col_u2.text_input("Sasaran Kegiatan", value=default_sasaran)
                 rab_vol = col_u1.number_input("Volume Target", value=1, min_value=1)
                 rab_satuan = col_u2.text_input("Satuan Ukur", placeholder="Contoh: Layanan / Bulan")
 
@@ -614,7 +620,6 @@ elif st.session_state["role"] == "admin":
                     }
                 )
 
-                # REVISI 2: HITUNG PAGU DANA OTOMATIS DARI RINCIAN BELANJA
                 df_input_detail["Vol_1_Num"] = pd.to_numeric(df_input_detail["Vol 1"]).fillna(1)
                 df_input_detail["Vol_2_Num"] = pd.to_numeric(df_input_detail["Vol 2"]).fillna(1)
                 df_input_detail["Harga_Num"] = pd.to_numeric(df_input_detail["Harga Satuan"]).fillna(0)
@@ -672,7 +677,6 @@ elif st.session_state["role"] == "admin":
                         return f"{v1} x {v2}", f"{s1} x {s2}"
                     return f"{v1}", f"{s1}"
 
-                # REVISI 1: PEMISAHAN KOLOM KODE SECARA BERSIH DI WEB VIEW JUGA
                 df_view = detail_terpilih.copy()
                 df_view['Kode Akun'] = df_view['Akun_Belanja'].apply(lambda x: split_kode(x)[0])
                 df_view['Nama Akun Belanja'] = df_view['Akun_Belanja'].apply(lambda x: split_kode(x)[1])
@@ -728,28 +732,23 @@ elif st.session_state["role"] == "admin":
 
                     total_seluruh = df_items["Total_Biaya"].sum()
                     
-                    # REVISI 1: PEMISAHAN KODE 7730.CAA.001, 051, DAN A SECARA PARALEL KE KOLOM KODE (COL A)
                     for head_col, indent in [('RO', ""), ('Komponen', "  "), ('Sub_Komponen', "    ")]:
                         if df_header[head_col].iloc[0] and str(df_header[head_col].iloc[0]).strip() not in ["", "-", "Tidak Ada Sub-Komponen"]:
                             kode_h, ur_h = split_kode(df_header[head_col].iloc[0])
                             
-                            # Cek jika didalam komponen mengandung format dot terpadu (ex: 052.A)
                             if "." in kode_h and len(kode_h.split(".")) == 2 and len(kode_h.split(".")[0]) == 3:
                                 k1, k2 = kode_h.split(".")
-                                # Pecah Baris Komponen Murni
                                 ws.cell(row=rp, column=1, value=k1).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                                 ws.cell(row=rp, column=2, value=f"{indent}{ur_h}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
                                 ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
                                 ws.cell(row=rp, column=6, value=total_seluruh).font = font_bold; ws.cell(row=rp, column=6).border = border_all; ws.cell(row=rp, column=6).number_format = '#,##0'
                                 rp += 1
-                                # Pecah Baris Sub-Komponen Murni
                                 ws.cell(row=rp, column=1, value=k2).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                                 ws.cell(row=rp, column=2, value=f"{indent}  Subkomponen {k2}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
                                 ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
                                 ws.cell(row=rp, column=6, value=total_seluruh).font = font_bold; ws.cell(row=rp, column=6).border = border_all; ws.cell(row=rp, column=6).number_format = '#,##0'
                                 rp += 1
                             else:
-                                # Normal Split Sesuai Kolom Masing-Masing
                                 ws.cell(row=rp, column=1, value=kode_h).border = border_all; ws.cell(row=rp, column=1).font = font_bold
                                 ws.cell(row=rp, column=2, value=f"{indent}{ur_h}").border = border_all; ws.cell(row=rp, column=2).font = font_bold
                                 ws.cell(row=rp, column=3).border = border_all; ws.cell(row=rp, column=4).border = border_all; ws.cell(row=rp, column=5).border = border_all
@@ -775,7 +774,6 @@ elif st.session_state["role"] == "admin":
                             c_tot = ws.cell(row=rp, column=6, value=r['Total_Biaya']); c_tot.number_format = '#,##0'; c_tot.border = border_all
                             rp += 1
                             
-                    # Tanda Tangan Pojok Kanan
                     rp += 2
                     bulan_indo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
                     try: 
