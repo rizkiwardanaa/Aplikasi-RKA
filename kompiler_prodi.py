@@ -86,15 +86,15 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # ==========================================
-# 3. SIDEBAR (DENGAN NAVIGASI ADMIN)
+# 3. SIDEBAR UTAMA & LOGIKA MENU
 # ==========================================
 with st.sidebar:
     st.header("Sistem Perencanaan")
     st.markdown(f"👤 **{st.session_state['nama_user']}**")
     
-    # Navigasi Khusus Admin
+    # Menampilkan menu khusus admin saja
     menu_pilihan = "1. Dashboard Kompiler Usulan"
-    if st.session_state["role"] == "admin":
+    if st.session_state.get("role") == "admin":
         st.markdown("---")
         menu_pilihan = st.radio("📍 Navigasi Admin:", ["1. Dashboard Kompiler Usulan", "2. Pengolah Dokumen RAB"])
         st.markdown("---")
@@ -104,7 +104,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# FUNGSI EXPORT DATA (UNTUK KOMPILER)
+# FUNGSI EXPORT DATA HTML / PDF
 # ==========================================
 def generate_html_report(df_data, nama_prodi, hidden=False):
     html = f"""
@@ -151,13 +151,11 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
                 <p>Laman http://fib.unmul.ac.id   Surel fib@unmul.ac.id</p>
             </div>
         </div>
-
         <div class="judul-laporan">
             <h3>Rekapitulasi Rincian Anggaran Tahun 2026</h3>
             <span class="badge-prodi">Program Studi: {nama_prodi}</span>
         </div>
     """
-    
     prodi_list = sorted(df_data["Program_Studi"].unique())
     for prodi in prodi_list:
         if nama_prodi == "Seluruh Fakultas":
@@ -172,61 +170,21 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
             df_k = df_p[df_p["Nama_Kegiatan"] == keg]
             stat = df_k["Status"].iloc[0]
             cat = df_k["Catatan_Fakultas"].iloc[0]
-            
             teks_tot = "Rp ***" if hidden else f"Rp {format_rupiah(tot)}"
             
-            html += f"""
-            <div class="block-kegiatan">
-                <div class="header-kegiatan">
-                    {idx+1}. {keg.upper()}  |  {teks_tot}  |  [{stat}]
-                </div>
-            """
+            html += f'<div class="block-kegiatan"><div class="header-kegiatan">{idx+1}. {keg.upper()}  |  {teks_tot}  |  [{stat}]</div>'
             if cat != "-": html += f'<div class="catatan-review"><strong>Catatan Review:</strong> {cat}</div>'
-                
-            html += """
-                <table class="tabel-rincian">
-                    <thead>
-                        <tr>
-                            <th style="width: 50%; text-align: left;">Rincian Belanja</th>
-                            <th style="width: 10%;">Vol</th>
-                            <th style="width: 15%;">Satuan</th>
-            """
-            if not hidden:
-                html += """
-                            <th style="width: 12%; text-align: right;">Harga Satuan</th>
-                            <th style="width: 13%; text-align: right;">Total</th>
-                """
-            html += """
-                        </tr>
-                    </thead>
-                    <tbody>
-            """
+            html += '<table class="tabel-rincian"><thead><tr><th style="width: 50%; text-align: left;">Rincian Belanja</th><th style="width: 10%;">Vol</th><th style="width: 15%;">Satuan</th>'
+            if not hidden: html += '<th style="width: 12%; text-align: right;">Harga Satuan</th><th style="width: 13%; text-align: right;">Total</th>'
+            html += '</tr></thead><tbody>'
+            
             for _, r in df_k.iterrows():
-                html += f"""
-                        <tr>
-                            <td>{r['Rincian_Belanja']}</td>
-                            <td class="text-center">{r['Volume']}</td>
-                            <td class="text-center">{r['Satuan']}</td>
-                """
-                if not hidden:
-                    html += f"""
-                            <td class="text-right">{format_rupiah(r['Harga_Satuan'])}</td>
-                            <td class="text-right">{format_rupiah(r['Total_Usulan'])}</td>
-                    """
+                html += f"<tr><td>{r['Rincian_Belanja']}</td><td class='text-center'>{r['Volume']}</td><td class='text-center'>{r['Satuan']}</td>"
+                if not hidden: html += f"<td class='text-right'>{format_rupiah(r['Harga_Satuan'])}</td><td class='text-right'>{format_rupiah(r['Total_Usulan'])}</td>"
                 html += "</tr>"
                 
-            if not hidden:
-                html += f"""
-                        <tr class="total-row">
-                            <td colspan="4" class="text-right">Total Usulan Anggaran Kegiatan</td>
-                            <td class="text-right">{format_rupiah(tot)}</td>
-                        </tr>
-                """
-            html += """
-                    </tbody>
-                </table>
-            </div>
-            """
+            if not hidden: html += f'<tr class="total-row"><td colspan="4" class="text-right">Total Usulan Anggaran Kegiatan</td><td class="text-right">{format_rupiah(tot)}</td></tr>'
+            html += '</tbody></table></div>'
     html += "</body></html>"
     return html
 
@@ -276,11 +234,9 @@ if st.session_state["role"] == "prodi":
         st.markdown("### 🤖 Insight & Langkah Selanjutnya")
         insights = []
         keg_tanpa_tor = my_data[my_data["File_TOR"] == "-"]["Nama_Kegiatan"].unique()
-        if len(keg_tanpa_tor) > 0:
-            insights.append(f"❌ **Lengkapi Dokumen:** Ada {len(keg_tanpa_tor)} kegiatan belum memiliki TOR. Upload di menu Monitoring.")
+        if len(keg_tanpa_tor) > 0: insights.append(f"❌ **Lengkapi Dokumen:** Ada {len(keg_tanpa_tor)} kegiatan belum memiliki TOR.")
         keg_rev = my_data[my_data["Status"] == "Perlu Revisi"]["Nama_Kegiatan"].unique()
-        if len(keg_rev) > 0:
-            insights.append(f"⚠️ **Tindak Lanjut Revisi:** Ada {len(keg_rev)} kegiatan perlu perbaikan.")
+        if len(keg_rev) > 0: insights.append(f"⚠️ **Tindak Lanjut Revisi:** Ada {len(keg_rev)} kegiatan perlu perbaikan.")
         
         if not insights: st.success("✅ Seluruh usulan Anda sudah lengkap dan sedang dalam proses review.")
         else:
@@ -290,7 +246,6 @@ if st.session_state["role"] == "prodi":
         st.markdown("### 📋 Daftar Kegiatan yang Sudah Diinput")
         if not my_data.empty:
             rekap_keg_prodi = my_data.groupby("Nama_Kegiatan")["Total_Usulan"].sum().reset_index()
-            
             for k in rekap_keg_prodi["Nama_Kegiatan"]:
                 df_k = my_data[my_data["Nama_Kegiatan"] == k].copy()
                 total_keg_val = df_k["Total_Usulan"].sum()
@@ -299,7 +254,6 @@ if st.session_state["role"] == "prodi":
                 
                 with st.expander(f"📌 {k.upper()} | Total: Rp {total_keg_val:,.0f} | Status: {status_keg}".replace(',', '.')):
                     if catatan_keg != "-": st.warning(f"**Catatan Fakultas:** {catatan_keg}")
-                    
                     if status_keg in ["Menunggu Review", "Perlu Revisi"]:
                         col_edit1, col_edit2 = st.columns([2, 1])
                         new_nama_keg = col_edit1.text_input("Nama Kegiatan:", value=k, key=f"edit_nama_{k}")
@@ -309,7 +263,6 @@ if st.session_state["role"] == "prodi":
                         
                         df_editable = df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan"]].reset_index(drop=True)
                         df_editable.insert(0, "Hapus", False)
-                        
                         edited_keg_rows = st.data_editor(
                             df_editable, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"prod_dash_ed_{k}",
                             column_config={
@@ -320,7 +273,6 @@ if st.session_state["role"] == "prodi":
                                 "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, required=True)
                             }
                         )
-                        
                         c_btn1, c_btn2 = st.columns([1, 4])
                         with c_btn1:
                             if st.button("💾 Simpan Perubahan", key=f"save_prod_dash_{k}"):
@@ -342,17 +294,14 @@ if st.session_state["role"] == "prodi":
                                         "File_TOR": df_k["File_TOR"].iloc[0] if "File_TOR" in df_k.columns else "-"
                                     } for _, r in valid_edited.iterrows()])
                                     df_usulan = pd.concat([df_usulan, updated_entries], ignore_index=True)
-                                save_data(df_usulan); st.success("Perubahan usulan disimpan!"); st.rerun()
-                                
+                                save_data(df_usulan); st.success("Tersimpan!"); st.rerun()
                         with c_btn2:
-                            if st.button("🚨 Hapus Seluruh Kegiatan", key=f"del_prod_dash_{k}", type="secondary"):
+                            if st.button("🚨 Hapus Kegiatan", key=f"del_prod_dash_{k}", type="secondary"):
                                 df_usulan = df_usulan[~((df_usulan["Program_Studi"] == st.session_state["nama_user"]) & (df_usulan["Nama_Kegiatan"] == k))]
-                                save_data(df_usulan); st.success("Seluruh kegiatan berhasil dihapus!"); st.rerun()
+                                save_data(df_usulan); st.success("Dihapus!"); st.rerun()
                     else:
-                        st.info(f"🔒 Data tidak dapat diedit/dihapus karena telah menerima keputusan Fakultas (**{status_keg}**).")
-                        st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({
-                            "Harga_Satuan": format_rupiah, "Total_Usulan": format_rupiah
-                        }), hide_index=True, use_container_width=True)
+                        st.info(f"🔒 Data tidak dapat diedit karena telah menerima keputusan Fakultas (**{status_keg}**).")
+                        st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({"Harga_Satuan": format_rupiah, "Total_Usulan": format_rupiah}), hide_index=True, use_container_width=True)
         else:
             st.info("Belum ada kegiatan yang diusulkan. Silakan buat usulan baru di tab 'Buat Usulan Baru'.")
 
@@ -361,9 +310,7 @@ if st.session_state["role"] == "prodi":
             nama_keg = st.text_input("Nama Kegiatan Utama")
             file_tor = st.file_uploader("Upload TOR (PDF, Maks 5MB)", type=["pdf"])
             template = pd.DataFrame([{"Rincian Belanja": "", "Volume": 0, "Satuan": "Orang", "Harga Satuan": 0}])
-            edited = st.data_editor(template, num_rows="dynamic", use_container_width=True, hide_index=True, column_config={
-                "Satuan": st.column_config.SelectboxColumn("Satuan", options=["Unit", "Orang", "Hari", "Bulan", "Tahun", "Jam", "Paket", "Stel", "Kegiatan"])
-            })
+            edited = st.data_editor(template, num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"Satuan": st.column_config.SelectboxColumn("Satuan", options=["Unit", "Orang", "Hari", "Bulan", "Tahun", "Jam", "Paket", "Stel", "Kegiatan"])})
             if st.form_submit_button("Kirim Usulan"):
                 valid = edited[edited["Rincian Belanja"].str.strip() != ""]
                 if nama_keg and not valid.empty:
@@ -390,40 +337,27 @@ if st.session_state["role"] == "prodi":
             st.info(f"Status: {status_saat_ini} | Catatan: {df_curr['Catatan_Fakultas'].iloc[0]}")
             
             if status_saat_ini in ["Menunggu Review", "Perlu Revisi"]:
-                st.warning("⚠️ Silakan perbaiki rincian biaya di bawah ini dan klik 'Kirim Ulang Revisi'.")
                 df_to_edit = df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan"]].reset_index(drop=True)
                 df_to_edit.insert(0, "Hapus", False)
-                
-                rev_ed = st.data_editor(df_to_edit, num_rows="dynamic", use_container_width=True, hide_index=True, column_config={
-                    "Hapus": st.column_config.CheckboxColumn("Hapus?", default=False),
-                    "Satuan": st.column_config.SelectboxColumn("Satuan", options=["Unit", "Orang", "Hari", "Bulan", "Tahun", "Jam", "Paket", "Stel", "Kegiatan"])
-                })
+                rev_ed = st.data_editor(df_to_edit, num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"Hapus": st.column_config.CheckboxColumn("Hapus?", default=False), "Satuan": st.column_config.SelectboxColumn("Satuan", options=["Unit", "Orang", "Hari", "Bulan", "Tahun", "Jam", "Paket", "Stel", "Kegiatan"])})
                 if st.button("Kirim Ulang Revisi"):
                     rev_ed["Volume"] = pd.to_numeric(rev_ed["Volume"]).fillna(0)
                     rev_ed["Harga_Satuan"] = pd.to_numeric(rev_ed["Harga_Satuan"]).fillna(0)
                     rev_ed["Hapus"] = rev_ed["Hapus"].fillna(False)
                     rev_ed["Rincian_Belanja"] = rev_ed["Rincian_Belanja"].fillna("")
                     valid_rev = rev_ed[(rev_ed["Hapus"] == False) & (rev_ed["Rincian_Belanja"].str.strip() != "")]
-                    
                     df_usulan = df_usulan[~((df_usulan["Program_Studi"]==st.session_state["nama_user"]) & (df_usulan["Nama_Kegiatan"]==sel_keg))]
-                    
                     if not valid_rev.empty:
-                        rev_entries = []
-                        tgl_rev = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
-                        for _, r in valid_rev.iterrows():
-                            rev_entries.append({
-                                "Tanggal_Input": tgl_rev, "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": sel_keg,
-                                "Rincian_Belanja": r["Rincian_Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
-                                "Harga_Satuan": r["Harga_Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
-                                "Prioritas": df_curr["Prioritas"].iloc[0], "Status": "Menunggu Review", "Catatan_Fakultas": f"Revisi: {df_curr['Catatan_Fakultas'].iloc[0]}",
-                                "File_TOR": df_curr["File_TOR"].iloc[0]
-                            })
-                        df_usulan = pd.concat([df_usulan, pd.DataFrame(rev_entries)], ignore_index=True)
-                    save_data(df_usulan); st.success("Revisi berhasil dikirim!"); st.rerun()
+                        rev_entries = pd.DataFrame([{
+                            "Tanggal_Input": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"), "Program_Studi": st.session_state["nama_user"], "Nama_Kegiatan": sel_keg,
+                            "Rincian_Belanja": r["Rincian_Belanja"], "Volume": r["Volume"], "Satuan": r["Satuan"],
+                            "Harga_Satuan": r["Harga_Satuan"], "Total_Usulan": r["Volume"] * r["Harga_Satuan"],
+                            "Prioritas": df_curr["Prioritas"].iloc[0], "Status": "Menunggu Review", "Catatan_Fakultas": f"Revisi: {df_curr['Catatan_Fakultas'].iloc[0]}", "File_TOR": df_curr["File_TOR"].iloc[0]
+                        } for _, r in valid_rev.iterrows()])
+                        df_usulan = pd.concat([df_usulan, rev_entries], ignore_index=True)
+                    save_data(df_usulan); st.success("Revisi dikirim!"); st.rerun()
             else:
-                st.table(df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({
-                    "Harga_Satuan": format_rupiah, "Total_Usulan": format_rupiah
-                }))
+                st.table(df_curr[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({"Harga_Satuan": format_rupiah, "Total_Usulan": format_rupiah}))
             
             with st.expander("📄 Update / Susulan Dokumen TOR"):
                 new_tor = st.file_uploader("Upload PDF (Maks 5MB)", type=["pdf"], key=f"up_{sel_keg}")
@@ -450,15 +384,40 @@ elif st.session_state["role"] == "admin":
         with col_info: st.info("Gunakan tab di bawah untuk meninjau usulan dari setiap Program Studi.")
         with col_toggle: sembunyikan_nilai = st.toggle("🙈 Sembunyikan Nominal Anggaran", value=False)
         
-        if df_usulan.empty: st.warning("Data kosong.")
-        else:
-            tab_rev, tab_hapus, tab_ins = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight Fakultas"])
+        tab_rev, tab_hapus, tab_ins, tab_restore = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight", "♻️ Restore Data"])
+
+        # ---------------------------------------------
+        # TAB BARU: ♻️ RESTORE DATA (SOLUSI CEPAT)
+        # ---------------------------------------------
+        with tab_restore:
+            st.subheader("♻️ Restore Database dari File Cadangan")
+            st.warning("Upload file **Rekap_FIB.csv** (atau file Excel Backup Anda) di bawah ini untuk mengembalikan seluruh data prodi yang hilang.")
             
-            with tab_rev:
+            file_cadangan = st.file_uploader("Upload File Backup CSV/Excel Anda di sini", type=["csv", "xlsx"])
+            if st.button("🚀 Jalankan Restore Data", type="primary"):
+                if file_cadangan is not None:
+                    try:
+                        if file_cadangan.name.endswith('.csv'): df_pulih = pd.read_csv(file_cadangan)
+                        else: df_pulih = pd.read_excel(file_cadangan)
+                        
+                        kolom_wajib = ["Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]
+                        if all(k in df_pulih.columns for k in kolom_wajib):
+                            if "Tanggal_Input" not in df_pulih.columns: df_pulih["Tanggal_Input"] = "-"
+                            if "Prioritas" not in df_pulih.columns: df_pulih["Prioritas"] = "Sedang"
+                            if "Status" not in df_pulih.columns: df_pulih["Status"] = "Menunggu Review"
+                            if "Catatan_Fakultas" not in df_pulih.columns: df_pulih["Catatan_Fakultas"] = "-"
+                            if "File_TOR" not in df_pulih.columns: df_pulih["File_TOR"] = "-"
+                            save_data(df_pulih); st.success("🎉 Seluruh data telah berhasil dipulihkan!"); st.rerun()
+                        else: st.error("Gagal! Format kolom pada file yang diupload tidak cocok dengan database aplikasi.")
+                    except Exception as e: st.error(f"Kesalahan saat membaca file: {e}")
+                else: st.error("Pilih file CSV atau Excel terlebih dahulu.")
+
+        with tab_rev:
+            if df_usulan.empty: st.warning("Data kosong. Silakan gunakan tab 'Restore Data' jika Anda memiliki backup.")
+            else:
                 st.subheader("🏙️ Rekapitulasi Anggaran Per Prodi")
                 rekap_semua = df_usulan.groupby("Program_Studi")["Total_Usulan"].sum().reset_index()
                 rekap_semua.columns = ["Program Studi", "Total Usulan (Rp)"]
-                
                 if sembunyikan_nilai:
                     rekap_semua["Total Usulan (Rp)"] = "Rp ***"
                     st.table(rekap_semua)
@@ -485,41 +444,34 @@ elif st.session_state["role"] == "admin":
                         
                         if st.button("Simpan Hasil Review", key=f"b_{prodi_sel}_{k}"):
                             df_usulan.loc[(df_usulan["Program_Studi"]==prodi_sel) & (df_usulan["Nama_Kegiatan"]==k), ["Status", "Catatan_Fakultas"]] = [n_s, n_n]
-                            save_data(df_usulan); st.success(f"Status '{k}' diperbarui!"); st.rerun()
+                            save_data(df_usulan); st.success(f"Status diperbarui!"); st.rerun()
                         
                         if sembunyikan_nilai: st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan"]].copy(), hide_index=True, use_container_width=True)
                         else: st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({"Harga_Satuan": format_rupiah, "Total_Usulan": format_rupiah}), hide_index=True, use_container_width=True)
 
-            with tab_hapus:
-                st.subheader("🗑️ Hapus Data Rincian")
+        with tab_hapus:
+            st.subheader("🗑️ Hapus Data Rincian")
+            if not df_usulan.empty:
                 opsi_hapus = {idx: f"[{row['Program_Studi']}] {row['Nama_Kegiatan']} - {row['Rincian_Belanja']}" for idx, row in df_usulan.iterrows()}
                 sel_h = st.selectbox("Pilih data rincian belanja:", options=list(opsi_hapus.keys()), format_func=lambda x: opsi_hapus[x])
                 if st.button("🚨 Hapus Permanen", type="primary"):
                     df_usulan = df_usulan.drop(index=sel_h).reset_index(drop=True)
-                    save_data(df_usulan); st.success("Data berhasil dihapus!"); st.rerun()
+                    save_data(df_usulan); st.success("Dihapus!"); st.rerun()
 
-            with tab_ins:
-                st.subheader("🤖 Analisis & Insight Pintar")
-                if sembunyikan_nilai: st.warning("⚠️ Insight angka dan grafik dinonaktifkan karena mode 'Sembunyikan Nominal Anggaran' sedang aktif.")
+        with tab_ins:
+            st.subheader("🤖 Analisis & Insight Pintar")
+            if not df_usulan.empty:
+                if sembunyikan_nilai: st.warning("⚠️ Insight dinonaktifkan di mode sembunyi.")
                 else:
                     tot = df_usulan['Total_Usulan'].sum()
                     if tot > 0:
-                        prodi_max = df_usulan.groupby('Program_Studi')['Total_Usulan'].sum().idxmax()
-                        val_max = df_usulan.groupby('Program_Studi')['Total_Usulan'].sum().max()
-                        keg_mahal = df_usulan.groupby('Nama_Kegiatan')['Total_Usulan'].sum().idxmax()
-                        val_keg_mahal = df_usulan.groupby('Nama_Kegiatan')['Total_Usulan'].sum().max()
-
-                        st.info(f"💡 **Total anggaran yang diajukan saat ini: Rp {format_rupiah(tot)}**\n\n* 📊 **Prodi Terbesar:** {prodi_max} (Rp {format_rupiah(val_max)})\n* 💎 **Kegiatan Prioritas:** {keg_mahal} (Rp {format_rupiah(val_keg_mahal)})")
-                        
+                        st.info(f"💡 **Total anggaran diajukan: Rp {format_rupiah(tot)}**")
                         st.bar_chart(df_usulan.groupby("Program_Studi")["Total_Usulan"].sum().reset_index().set_index("Program_Studi")["Total_Usulan"])
-                        
                         status_pivot = pd.crosstab(df_usulan["Program_Studi"], df_usulan["Status"]).reset_index()
                         rekap_detail = df_usulan.groupby("Program_Studi").agg(Total_Anggaran=("Total_Usulan", "sum"), Jumlah_Kegiatan=("Nama_Kegiatan", "nunique")).reset_index()
                         rekap_final = pd.merge(rekap_detail, status_pivot, on="Program_Studi", how="left").fillna(0)
-                        
                         for stat in ["Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak"]:
                             if stat not in rekap_final.columns: rekap_final[stat] = 0
-                                
                         rekap_final.rename(columns={"Program_Studi": "Program Studi", "Jumlah_Kegiatan": "Jml Kegiatan", "Total_Anggaran": "Total Anggaran (Rp)"}, inplace=True)
                         st.dataframe(rekap_final[["Program Studi", "Jml Kegiatan", "Menunggu Review", "Disetujui", "Perlu Revisi", "Ditolak", "Total Anggaran (Rp)"]].style.format({"Total Anggaran (Rp)": format_rupiah}), hide_index=True, use_container_width=True)
 
@@ -532,16 +484,15 @@ elif st.session_state["role"] == "admin":
                     st.dataframe(format_df_ke_hirarki(df_ins_p, hidden=sembunyikan_nilai), hide_index=True, use_container_width=True)
                     
                     col_ex1, col_ex2 = st.columns(2)
-                    with col_ex1: st.download_button("📊 Excel: Laporan Prodi", data=generate_excel(format_df_ke_hirarki(df_ins_p, hidden=sembunyikan_nilai), prodi_ins_sel[:30]), file_name=f"Laporan_{prodi_ins_sel}_2026.xlsx", use_container_width=True)
-                    with col_ex2: st.download_button("📊 Excel: Laporan Fakultas", data=generate_excel(format_df_ke_hirarki(df_usulan, hidden=sembunyikan_nilai), "Seluruh_Fakultas"), file_name="Laporan_FIB_Semua_2026.xlsx", use_container_width=True)
+                    with col_ex1: st.download_button("📊 Excel: Laporan Prodi", data=generate_excel(format_df_ke_hirarki(df_ins_p, hidden=sembunyikan_nilai), prodi_ins_sel[:30]), file_name=f"Laporan_{prodi_ins_sel}.xlsx", use_container_width=True)
+                    with col_ex2: st.download_button("📊 Excel: Laporan Fakultas", data=generate_excel(format_df_ke_hirarki(df_usulan, hidden=sembunyikan_nilai), "Seluruh_Fakultas"), file_name="Laporan_FIB_Semua.xlsx", use_container_width=True)
                     
                     col_pdf1, col_pdf2 = st.columns(2)
-                    with col_pdf1: st.download_button("📑 PDF: Laporan Prodi (Web)", data=generate_html_report(df_ins_p, prodi_ins_sel, hidden=sembunyikan_nilai).encode('utf-8'), file_name=f"Cetak_{prodi_ins_sel}.html", mime="text/html", use_container_width=True)
-                    with col_pdf2: st.download_button("📑 PDF: Laporan Fakultas (Web)", data=generate_html_report(df_usulan, "Seluruh Fakultas", hidden=sembunyikan_nilai).encode('utf-8'), file_name="Cetak_FIB_Semua.html", mime="text/html", use_container_width=True)
+                    with col_pdf1: st.download_button("📑 PDF: Laporan Prodi (Web)", data=generate_html_report(df_ins_p, prodi_ins_sel, hidden=sembunyikan_nilai).encode('utf-8'), file_name=f"Cetak_{prodi_ins_sel}.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
+                    with col_pdf2: st.download_button("📑 PDF: Laporan Fakultas (Web)", data=generate_html_report(df_usulan, "Seluruh Fakultas", hidden=sembunyikan_nilai).encode('utf-8'), file_name="Cetak_FIB_Semua.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
 
     # ----------------------------------------------------
     # JIKA ADMIN MEMILIH MENU PENGOLAH RAB (APP BARU)
-    # PANGGIL FILE KEDUA SECARA DINAMIS
     # ----------------------------------------------------
     elif menu_pilihan == "2. Pengolah Dokumen RAB":
         try:
