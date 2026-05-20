@@ -80,46 +80,177 @@ def show_page():
         with st.expander("⚡ Restore Database Master FIB (Otomatis)", expanded=True):
             st.warning("Klik tombol di bawah ini untuk memulihkan seluruh data standar KRO, RO, Komponen, dan 50+ Akun Belanja (Telah Terbagi BOPTN & PNBP).")
             if st.button("🚀 Restore Data Standar FIB", type="primary"):
-                df_kro_baru = pd.DataFrame([
-                    {"KRO": "7729.BEI - Bantuan Lembaga", "Sumber_Dana": "BOPTN"},
-                    {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.DBA - Pendidikan Tinggi", "Sumber_Dana": "PNBP"}
-                ])
-                save_table(df_kro_baru, "rab_m_kro")
-                
-                df_ro_baru = pd.DataFrame([
-                    {"KRO": "7729.BEI - Bantuan Lembaga", "RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional", "Sumber_Dana": "BOPTN"},
-                    {"KRO": "7729.BEI - Bantuan Lembaga", "RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran", "Sumber_Dana": "BOPTN"},
-                    {"KRO": "7729.BEI - Bantuan Lembaga", "RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran", "Sumber_Dana": "BOPTN"},
-                    {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "RO": "7730.CAA.002 - Sarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.001 - Layanan Pendidikan", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat", "Sumber_Dana": "PNBP"},
-                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.004 - Pengabdian Kepada Masyarakat", "Sumber_Dana": "PNBP"}
-                ])
-                save_table(df_ro_baru, "rab_m_ro")
-                
-                df_komp_baru = pd.DataFrame([
-                    {"RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional", "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan", "Sumber_Dana": "BOPTN"},
-                    {"RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran", "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan", "Sumber_Dana": "BOPTN"},
-                    {"RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran", "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan", "Sumber_Dana": "BOPTN"},
-                    {"RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran", "Komponen": "051 - Pengadaan Sarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.CAA.002 - Sarana Pendukung Perkantoran", "Komponen": "051 - Sarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran", "Komponen": "051 - Pengadaan Prasarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran", "Komponen": "051 - Pengadaan Prasarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.001 - Layanan Pendidikan", "Komponen": "051 - Pemeliharaan Sarana dan Prasarana Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.001 - Layanan Pendidikan", "Komponen": "052 - Pemeliharaan Sarana dan Prasarana Perkantoran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.001 - Layanan Pendidikan", "Komponen": "053 - Penyelenggaraan Layanan Pendidikan Perguruan Tinggi", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran", "Komponen": "051 - Penyelenggaraan Dukungan Operasional Pembelajaran", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran", "Komponen": "053 - Pelaksanaan Layanan Pengembangan Sistem Tata Kelola", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat", "Komponen": "051 - Penelitian", "Sumber_Dana": "PNBP"},
-                    {"RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat", "Komponen": "052 - Pengabdian Kepada Masyarakat", "Sumber_Dana": "PNBP"}
-                ])
-                save_table(df_komp_baru, "rab_m_komp")
+
+    # =========================
+    # MASTER KRO
+    # =========================
+    df_kro_baru = pd.DataFrame([
+        {"KRO": "7729.BEI - Bantuan Lembaga", "Sumber_Dana": "BOPTN"},
+
+        {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "Sumber_Dana": "PNBP"},
+        {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "Sumber_Dana": "PNBP"},
+        {"KRO": "7730.DBA - Pendidikan Tinggi", "Sumber_Dana": "PNBP"}
+    ])
+
+    save_table(df_kro_baru, "rab_m_kro")
+
+    # =========================
+    # MASTER RO
+    # =========================
+    df_ro_baru = pd.DataFrame([
+
+        # ===== BOPTN =====
+        {
+            "KRO": "7729.BEI - Bantuan Lembaga",
+            "RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional",
+            "Sumber_Dana": "BOPTN"
+        },
+        {
+            "KRO": "7729.BEI - Bantuan Lembaga",
+            "RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran",
+            "Sumber_Dana": "BOPTN"
+        },
+        {
+            "KRO": "7729.BEI - Bantuan Lembaga",
+            "RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran",
+            "Sumber_Dana": "BOPTN"
+        },
+
+        # ===== PNBP =====
+        {
+            "KRO": "7730.CAA - Sarana Bidang Pendidikan",
+            "RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "KRO": "7730.CAA - Sarana Bidang Pendidikan",
+            "RO": "7730.CAA.002 - Sarana Pendukung Perkantoran",
+            "Sumber_Dana": "PNBP"
+        },
+
+        {
+            "KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi",
+            "RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi",
+            "RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran",
+            "Sumber_Dana": "PNBP"
+        },
+
+        {
+            "KRO": "7730.DBA - Pendidikan Tinggi",
+            "RO": "7730.DBA.001 - Layanan Pendidikan",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "KRO": "7730.DBA - Pendidikan Tinggi",
+            "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "KRO": "7730.DBA - Pendidikan Tinggi",
+            "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "KRO": "7730.DBA - Pendidikan Tinggi",
+            "RO": "7730.DBA.004 - Pengabdian Kepada Masyarakat",
+            "Sumber_Dana": "PNBP"
+        }
+    ])
+
+    save_table(df_ro_baru, "rab_m_ro")
+
+    # =========================
+    # MASTER KOMPONEN
+    # =========================
+    df_komp_baru = pd.DataFrame([
+
+        # ===== BOPTN =====
+        {
+            "RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional",
+            "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan",
+            "Sumber_Dana": "BOPTN"
+        },
+        {
+            "RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran",
+            "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan",
+            "Sumber_Dana": "BOPTN"
+        },
+        {
+            "RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran",
+            "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan",
+            "Sumber_Dana": "BOPTN"
+        },
+
+        # ===== PNBP =====
+        {
+            "RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran",
+            "Komponen": "051 - Pengadaan Sarana Pendukung Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "RO": "7730.CAA.002 - Sarana Pendukung Perkantoran",
+            "Komponen": "051 - Sarana Pendukung Perkantoran",
+            "Sumber_Dana": "PNBP"
+        },
+
+        {
+            "RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran",
+            "Komponen": "051 - Pengadaan Prasarana Pendukung Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran",
+            "Komponen": "051 - Pengadaan Prasarana Pendukung Perkantoran",
+            "Sumber_Dana": "PNBP"
+        },
+
+        {
+            "RO": "7730.DBA.001 - Layanan Pendidikan",
+            "Komponen": "051 - Pemeliharaan Sarana dan Prasarana Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "RO": "7730.DBA.001 - Layanan Pendidikan",
+            "Komponen": "052 - Pemeliharaan Sarana dan Prasarana Perkantoran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "RO": "7730.DBA.001 - Layanan Pendidikan",
+            "Komponen": "053 - Penyelenggaraan Layanan Pendidikan Perguruan Tinggi",
+            "Sumber_Dana": "PNBP"
+        },
+
+        {
+            "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran",
+            "Komponen": "051 - Penyelenggaraan Dukungan Operasional Pembelajaran",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran",
+            "Komponen": "053 - Pelaksanaan Layanan Pengembangan Sistem Tata Kelola",
+            "Sumber_Dana": "PNBP"
+        },
+
+        {
+            "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat",
+            "Komponen": "051 - Penelitian",
+            "Sumber_Dana": "PNBP"
+        },
+        {
+            "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat",
+            "Komponen": "052 - Pengabdian Kepada Masyarakat",
+            "Sumber_Dana": "PNBP"
+        }
+    ])
+
+    save_table(df_komp_baru, "rab_m_komp")
+
+    st.success("🎉 Struktur Master BOPTN & PNBP berhasil diperbaiki!")
+    st.rerun()
                 
                 akun_standar = [
                     {"Account_Code": "521111", "Account_Name": "Belanja Keperluan Perkantoran"},
