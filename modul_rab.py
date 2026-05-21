@@ -11,6 +11,7 @@ engine = create_engine(DB_URL)
 
 # --- FUNGSI DATABASE MASTER RAB (DITAMBAH SUMBER DANA) ---
 def load_table(table_name, default_cols):
+    conn = engine.connect() # Menggunakan koneksi engine
     try:
         # Membaca dari PostgreSQL
         df = pd.read_sql(f"SELECT * FROM {table_name}", engine)
