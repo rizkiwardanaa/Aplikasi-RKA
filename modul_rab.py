@@ -18,6 +18,7 @@ def load_table(table_name, default_cols):
                 if "Vol" in col or "Harga" in col or "Total" in col: df[col] = 1 if "Vol" in col else 0
                 elif col == "Tahun": df[col] = "2027"
                 elif col == "Sumber_Dana": df[col] = "BOPTN"
+                elif col == "Sub_Komponen" and table_name == "rab_m_akun": df[col] = "-"
                 else: df[col] = "-"
     except:
         df = pd.DataFrame(columns=default_cols)
@@ -63,7 +64,7 @@ def show_page():
     df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
     df_m_komp = load_table("rab_m_komp", ["RO", "Komponen", "Sumber_Dana"])
     df_m_subkomp = load_table("rab_m_subkomp", ["Komponen", "Sub_Komponen", "Sumber_Dana"])
-    df_m_akun = load_table("rab_m_akun", ["Account_Code", "Account_Name", "Sumber_Dana"]) 
+    df_m_akun = load_table("rab_m_akun", ["Sub_Komponen", "Account_Code", "Account_Name", "Sumber_Dana"]) 
     df_m_pejabat = load_table("rab_m_pejabat", ["Jabatan", "Nama", "NIP"])
 
     df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat"])
@@ -247,11 +248,8 @@ def show_page():
                     }
                 ])
 
-    save_table(df_komp_baru, "rab_m_komp")
+                save_table(df_komp_baru, "rab_m_komp")
 
-    st.success("🎉 Struktur Master BOPTN & PNBP berhasil diperbaiki!")
-    st.rerun()
-                
                 akun_standar = [
                     {"Account_Code": "521111", "Account_Name": "Belanja Keperluan Perkantoran"},
                     {"Account_Code": "521115", "Account_Name": "Belanja Honor Operasional Satuan Kerja"},
@@ -273,8 +271,8 @@ def show_page():
                     {"Account_Code": "537112", "Account_Name": "Belanja Modal Peralatan dan Mesin - BLU"}
                 ]
                 
-                df_akun_boptn = pd.DataFrame(akun_standar); df_akun_boptn["Sumber_Dana"] = "BOPTN"
-                df_akun_pnbp = pd.DataFrame(akun_standar); df_akun_pnbp["Sumber_Dana"] = "PNBP"
+                df_akun_boptn = pd.DataFrame(akun_standar); df_akun_boptn["Sumber_Dana"] = "BOPTN"; df_akun_boptn["Sub_Komponen"] = "-"
+                df_akun_pnbp = pd.DataFrame(akun_standar); df_akun_pnbp["Sumber_Dana"] = "PNBP"; df_akun_pnbp["Sub_Komponen"] = "-"
                 df_akun_gabung = pd.concat([df_akun_boptn, df_akun_pnbp], ignore_index=True)
                 save_table(df_akun_gabung, "rab_m_akun")
                 
@@ -304,11 +302,18 @@ def show_page():
 
             st.markdown(f"**5. Master Akun Belanja ({sumber_master})**")
             df_akun_f = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_master].copy()
-            edit_akun = st.data_editor(df_akun_f[["Account_Code", "Account_Name"]], num_rows="dynamic", use_container_width=True, hide_index=True, key="me_akun")
+            list_sub = df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_master]["Sub_Komponen"].tolist()
+            
+            edit_akun = st.data_editor(
+                df_akun_f[["Sub_Komponen", "Account_Code", "Account_Name"]], 
+                num_rows="dynamic", use_container_width=True, hide_index=True, 
+                column_config={"Sub_Komponen": st.column_config.SelectboxColumn("Induk Sub-Komponen", options=list_sub if list_sub else ["-"], required=True)},
+                key="me_akun"
+            )
             if st.button("💾 Simpan Akun Belanja"): 
                 edit_akun['Sumber_Dana'] = sumber_master
                 df_sisa = df_m_akun[df_m_akun['Sumber_Dana'] != sumber_master]
-                save_table(pd.concat([df_sisa, edit_akun.dropna(subset=["Account_Code"])]), "rab_m_akun"); st.rerun()
+                save_table(pd.concat([df_sisa, edit_akun.dropna(subset=["Account_Code", "Sub_Komponen"])]), "rab_m_akun"); st.rerun()
 
         with col_m2:
             st.markdown(f"**2. Master RO ({sumber_master})**")
@@ -372,10 +377,15 @@ def show_page():
             st.markdown("---")
             st.subheader("3. Rincian Belanja (Pengali Volume & Satuan)")
             
-            df_akun_f = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_buat]
+            # --- FILTER AKUN BERDASARKAN SUB-KOMPONEN YANG DIPILIH ---
+            df_akun_f = df_m_akun[(df_m_akun['Sumber_Dana'] == sumber_buat) & (df_m_akun['Sub_Komponen'] == pilih_subkomp)]
             opsi_akun = [f"{row['Account_Code']} - {row['Account_Name']}" for _, row in df_akun_f.iterrows()]
             
-            template_detail = pd.DataFrame([{"Akun Belanja": opsi_akun[0] if opsi_akun else "", "Uraian Belanja": "", "Vol 1": 1, "Sat 1": "Unit", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
+            if not opsi_akun:
+                st.warning(f"⚠️ Belum ada Akun Belanja yang terhubung ke Sub-Komponen '{pilih_subkomp}'. Silakan petakan di tab Master Database.")
+                opsi_akun = ["- Tidak ada akun terpetakan -"]
+            
+            template_detail = pd.DataFrame([{"Akun Belanja": opsi_akun[0], "Uraian Belanja": "", "Vol 1": 1, "Sat 1": "Unit", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
             
             df_input_detail = st.data_editor(
                 template_detail, num_rows="dynamic", use_container_width=True, hide_index=True, key="grid_buat_rab",
