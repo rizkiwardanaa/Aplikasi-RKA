@@ -8,8 +8,16 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_DB = os.path.join(BASE_DIR, "database_usulan_prodi.db")
 
-# --- FUNGSI DATABASE MASTER RAB (DITAMBAH SUMBER DANA) ---
+# =====================================================================
+# KUMPULAN FUNGSI BANTU (HELPER) & DATABASE
+# =====================================================================
+
 def load_table(table_name, default_cols):
+    """
+    Fungsi untuk memuat tabel dari database SQLite.
+    Jika tabel belum ada, fungsi ini akan membuat tabel baru beserta kolom defaultnya.
+    Khusus untuk tabel akun, akan otomatis ditambahkan kolom 'Sub_Komponen'.
+    """
     conn = sqlite3.connect(FILE_DB)
     try:
         df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
@@ -27,15 +35,27 @@ def load_table(table_name, default_cols):
     return df
 
 def save_table(df, table_name):
+    """
+    Fungsi untuk menyimpan dataframe (tabel) kembali ke database SQLite.
+    Akan menimpa (replace) tabel lama dengan data yang baru.
+    """
     conn = sqlite3.connect(FILE_DB)
     df.to_sql(table_name, conn, if_exists="replace", index=False)
     conn.close()
 
 def format_rupiah(x):
+    """
+    Fungsi untuk mengubah angka menjadi format Rupiah (pemisah ribuan dengan titik).
+    Contoh: 1500000 menjadi 1.500.000
+    """
     try: return f"{float(x):,.0f}".replace(',', '.')
     except (ValueError, TypeError): return x
 
 def split_kode(teks):
+    """
+    Fungsi untuk memisahkan kode angka dan narasi (teks uraian).
+    Contoh: "051 - Penelitian" akan dipisah menjadi "051" dan "Penelitian".
+    """
     s = str(teks).strip()
     if " - " in s:
         parts = s.split(" - ", 1)
@@ -50,6 +70,11 @@ def split_kode(teks):
     return "", s
 
 def get_vol_sat_combined(v1, s1, v2, s2):
+    """
+    Fungsi untuk menggabungkan dua pasang Volume dan Satuan menjadi satu teks.
+    Jika Vol 2 kosong, hanya akan menampilkan "Vol 1 Satuan 1".
+    Jika ada keduanya, menampilkan "Vol 1 Sat 1 x Vol 2 Sat 2".
+    """
     v1_str = str(v1).replace(".0", "") if pd.notna(v1) else "0"
     s1_str = str(s1).strip() if pd.notna(s1) else ""
     v2_str = str(v2).replace(".0", "") if pd.notna(v2) else "0"
@@ -58,8 +83,17 @@ def get_vol_sat_combined(v1, s1, v2, s2):
         return f"{v1_str} {s1_str}"
     return f"{v1_str} {s1_str} x {v2_str} {s2_str}"
 
-# --- FUNGSI UTAMA HALAMAN RAB ---
+
+# =====================================================================
+# FUNGSI TAMPILAN HALAMAN UTAMA (SHOW PAGE)
+# =====================================================================
+
 def show_page():
+    """
+    Fungsi utama yang merender seluruh halaman 'Pengolah Dokumen RAB'.
+    Berisi 3 Tab: Master Database, Buat RAB, dan Daftar Tersimpan.
+    """
+    # 1. Memuat seluruh tabel master dari database
     df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
     df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
     df_m_komp = load_table("rab_m_komp", ["RO", "Komponen", "Sumber_Dana"])
@@ -67,6 +101,7 @@ def show_page():
     df_m_akun = load_table("rab_m_akun", ["Sub_Komponen", "Account_Code", "Account_Name", "Sumber_Dana"]) 
     df_m_pejabat = load_table("rab_m_pejabat", ["Jabatan", "Nama", "NIP"])
 
+    # 2. Memuat tabel transaksi (Header dan Detail RAB)
     df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat"])
     df_rab_detail = load_table("rab_detail", ["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
 
@@ -75,181 +110,66 @@ def show_page():
 
     tab_master, tab_buat, tab_daftar = st.tabs(["🗂️ Master Database", "📝 Buat RAB Baru", "📂 Daftar RAB Tersimpan"])
 
+    # -----------------------------------------------------------------
+    # TAB 1: MASTER DATABASE
+    # -----------------------------------------------------------------
     with tab_master:
         st.info("💡 Input Master Data. Format bebas, mesin otomatis memisahkan teks sebelum tanda strip '-' ke kolom Kode Excel.")
         
-        with st.expander("⚡ Restore Database Master FIB (Otomatis)", expanded=True):
+        # --- BLOK 1: RESTORE DATA STANDAR ---
+        with st.expander("⚡ Restore Database Master FIB (Otomatis)", expanded=False):
             st.warning("Klik tombol di bawah ini untuk memulihkan seluruh data standar KRO, RO, Komponen, dan 50+ Akun Belanja (Telah Terbagi BOPTN & PNBP).")
             if st.button("🚀 Restore Data Standar FIB", type="primary"):
 
-    # =========================
-    # MASTER KRO
-    # =========================
+                # MASTER KRO
                 df_kro_baru = pd.DataFrame([
                     {"KRO": "7729.BEI - Bantuan Lembaga", "Sumber_Dana": "BOPTN"},
-            
                     {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "Sumber_Dana": "PNBP"},
                     {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "Sumber_Dana": "PNBP"},
                     {"KRO": "7730.DBA - Pendidikan Tinggi", "Sumber_Dana": "PNBP"}
                 ])
-            
                 save_table(df_kro_baru, "rab_m_kro")
             
-                # =========================
                 # MASTER RO
-                # =========================
                 df_ro_baru = pd.DataFrame([
-            
                     # ===== BOPTN =====
-                    {
-                        "KRO": "7729.BEI - Bantuan Lembaga",
-                        "RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional",
-                        "Sumber_Dana": "BOPTN"
-                    },
-                    {
-                        "KRO": "7729.BEI - Bantuan Lembaga",
-                        "RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran",
-                        "Sumber_Dana": "BOPTN"
-                    },
-                    {
-                        "KRO": "7729.BEI - Bantuan Lembaga",
-                        "RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran",
-                        "Sumber_Dana": "BOPTN"
-                    },
-            
+                    {"KRO": "7729.BEI - Bantuan Lembaga", "RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional", "Sumber_Dana": "BOPTN"},
+                    {"KRO": "7729.BEI - Bantuan Lembaga", "RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran", "Sumber_Dana": "BOPTN"},
+                    {"KRO": "7729.BEI - Bantuan Lembaga", "RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran", "Sumber_Dana": "BOPTN"},
                     # ===== PNBP =====
-                    {
-                        "KRO": "7730.CAA - Sarana Bidang Pendidikan",
-                        "RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "KRO": "7730.CAA - Sarana Bidang Pendidikan",
-                        "RO": "7730.CAA.002 - Sarana Pendukung Perkantoran",
-                        "Sumber_Dana": "PNBP"
-                    },
-            
-                    {
-                        "KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi",
-                        "RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi",
-                        "RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran",
-                        "Sumber_Dana": "PNBP"
-                    },
-            
-                    {
-                        "KRO": "7730.DBA - Pendidikan Tinggi",
-                        "RO": "7730.DBA.001 - Layanan Pendidikan",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "KRO": "7730.DBA - Pendidikan Tinggi",
-                        "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "KRO": "7730.DBA - Pendidikan Tinggi",
-                        "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "KRO": "7730.DBA - Pendidikan Tinggi",
-                        "RO": "7730.DBA.004 - Pengabdian Kepada Masyarakat",
-                        "Sumber_Dana": "PNBP"
-                    }
+                    {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.CAA - Sarana Bidang Pendidikan", "RO": "7730.CAA.002 - Sarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.CBJ - Prasarana Bidang Pendidikan Tinggi", "RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.001 - Layanan Pendidikan", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat", "Sumber_Dana": "PNBP"},
+                    {"KRO": "7730.DBA - Pendidikan Tinggi", "RO": "7730.DBA.004 - Pengabdian Kepada Masyarakat", "Sumber_Dana": "PNBP"}
                 ])
-            
                 save_table(df_ro_baru, "rab_m_ro")
             
-                # =========================
                 # MASTER KOMPONEN
-                # =========================
                 df_komp_baru = pd.DataFrame([
-            
                     # ===== BOPTN =====
-                    {
-                        "RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional",
-                        "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan",
-                        "Sumber_Dana": "BOPTN"
-                    },
-                    {
-                        "RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran",
-                        "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan",
-                        "Sumber_Dana": "BOPTN"
-                    },
-                    {
-                        "RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran",
-                        "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan",
-                        "Sumber_Dana": "BOPTN"
-                    },
-            
+                    {"RO": "7729.BEI.001 - PT Penerima Bantuan Dukungan Operasional", "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan", "Sumber_Dana": "BOPTN"},
+                    {"RO": "7729.BEI.002 - PT Penerima Bantuan Pembelajaran", "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan", "Sumber_Dana": "BOPTN"},
+                    {"RO": "7729.BEI.004 - PT Penerima Bantuan Sarana dan Prasarana Pembelajaran", "Komponen": "004 - Dukungan Operasional Penyelenggaraan Pendidikan", "Sumber_Dana": "BOPTN"},
                     # ===== PNBP =====
-                    {
-                        "RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran",
-                        "Komponen": "051 - Pengadaan Sarana Pendukung Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "RO": "7730.CAA.002 - Sarana Pendukung Perkantoran",
-                        "Komponen": "051 - Sarana Pendukung Perkantoran",
-                        "Sumber_Dana": "PNBP"
-                    },
-            
-                    {
-                        "RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran",
-                        "Komponen": "051 - Pengadaan Prasarana Pendukung Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran",
-                        "Komponen": "051 - Pengadaan Prasarana Pendukung Perkantoran",
-                        "Sumber_Dana": "PNBP"
-                    },
-            
-                    {
-                        "RO": "7730.DBA.001 - Layanan Pendidikan",
-                        "Komponen": "051 - Pemeliharaan Sarana dan Prasarana Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "RO": "7730.DBA.001 - Layanan Pendidikan",
-                        "Komponen": "052 - Pemeliharaan Sarana dan Prasarana Perkantoran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "RO": "7730.DBA.001 - Layanan Pendidikan",
-                        "Komponen": "053 - Penyelenggaraan Layanan Pendidikan Perguruan Tinggi",
-                        "Sumber_Dana": "PNBP"
-                    },
-            
-                    {
-                        "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran",
-                        "Komponen": "051 - Penyelenggaraan Dukungan Operasional Pembelajaran",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran",
-                        "Komponen": "053 - Pelaksanaan Layanan Pengembangan Sistem Tata Kelola",
-                        "Sumber_Dana": "PNBP"
-                    },
-            
-                    {
-                        "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat",
-                        "Komponen": "051 - Penelitian",
-                        "Sumber_Dana": "PNBP"
-                    },
-                    {
-                        "RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat",
-                        "Komponen": "052 - Pengabdian Kepada Masyarakat",
-                        "Sumber_Dana": "PNBP"
-                    }
+                    {"RO": "7730.CAA.001 - Sarana Pendukung Pembelajaran", "Komponen": "051 - Pengadaan Sarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.CAA.002 - Sarana Pendukung Perkantoran", "Komponen": "051 - Sarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.CBJ.001 - Prasarana Pendukung Pembelajaran", "Komponen": "051 - Pengadaan Prasarana Pendukung Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.CBJ.002 - Prasarana Pendukung Perkantoran", "Komponen": "051 - Pengadaan Prasarana Pendukung Perkantoran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.001 - Layanan Pendidikan", "Komponen": "051 - Pemeliharaan Sarana dan Prasarana Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.001 - Layanan Pendidikan", "Komponen": "052 - Pemeliharaan Sarana dan Prasarana Perkantoran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.001 - Layanan Pendidikan", "Komponen": "053 - Penyelenggaraan Layanan Pendidikan Perguruan Tinggi", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran", "Komponen": "051 - Penyelenggaraan Dukungan Operasional Pembelajaran", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.002 - Dukungan Operasional Pembelajaran", "Komponen": "053 - Pelaksanaan Layanan Pengembangan Sistem Tata Kelola", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat", "Komponen": "051 - Penelitian", "Sumber_Dana": "PNBP"},
+                    {"RO": "7730.DBA.003 - Penelitian dan Pengabdian Masyarakat", "Komponen": "052 - Pengabdian Kepada Masyarakat", "Sumber_Dana": "PNBP"}
                 ])
-
                 save_table(df_komp_baru, "rab_m_komp")
 
+                # MASTER AKUN BELANJA
                 akun_standar = [
                     {"Account_Code": "521111", "Account_Name": "Belanja Keperluan Perkantoran"},
                     {"Account_Code": "521115", "Account_Name": "Belanja Honor Operasional Satuan Kerja"},
@@ -277,10 +197,13 @@ def show_page():
                 save_table(df_akun_gabung, "rab_m_akun")
                 
                 st.success("🎉 BOOM! Seluruh Data Master FIB (BOPTN & PNBP) berhasil dipulihkan secara otomatis!"); st.rerun()
+
+        # --- BLOK 2: IMPORT & EXPORT EXCEL ---
         with st.expander("💾 Import & Export Data Master (Excel)", expanded=False):
-            st.info("Gunakan fitur ini untuk mendownload backup seluruh data master ke Excel, atau mengunggah (mengembalikan) data master dari file backup Excel.")
+            st.info("Gunakan fitur ini untuk mem-backup seluruh data master ke Excel, atau memulihkan data master dari file Excel.")
             c_eks, c_imp = st.columns(2)
             
+            # FITUR EXPORT
             with c_eks:
                 st.markdown("**1. Export Data Master**")
                 output_master = BytesIO()
@@ -299,6 +222,7 @@ def show_page():
                     type="primary"
                 )
             
+            # FITUR IMPORT
             with c_imp:
                 st.markdown("**2. Import Data Master**")
                 file_master = st.file_uploader("Upload File Backup Excel Master", type=['xlsx'], key="import_master")
@@ -317,7 +241,8 @@ def show_page():
                             st.error(f"Gagal memproses file. Pastikan format sheet sesuai: {e}")
                     else:
                         st.warning("⚠️ Pilih file Excel terlebih dahulu!")
-        
+
+        # --- BLOK 3: EDITOR DATA MASTER MANUAL ---
         sumber_master = st.radio("Pilih Kategori Master yang Ingin Diedit:", ["BOPTN", "PNBP"], horizontal=True)
         st.markdown("---")
 
@@ -344,6 +269,7 @@ def show_page():
             df_akun_f = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_master].copy()
             list_sub = df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_master]["Sub_Komponen"].tolist()
             
+            # Editor akun kini ditambahkan mapping ke "Sub_Komponen"
             edit_akun = st.data_editor(
                 df_akun_f[["Sub_Komponen", "Account_Code", "Account_Name"]], 
                 num_rows="dynamic", use_container_width=True, hide_index=True, 
@@ -378,6 +304,9 @@ def show_page():
             edit_pejabat = st.data_editor(df_m_pejabat, num_rows="dynamic", use_container_width=True, hide_index=True, key="me_pej")
             if st.button("💾 Simpan Data Pejabat"): save_table(edit_pejabat.dropna(how='all'), "rab_m_pejabat"); st.rerun()
 
+    # -----------------------------------------------------------------
+    # TAB 2: BUAT RAB BARU
+    # -----------------------------------------------------------------
     with tab_buat:
         sumber_buat = st.radio("Pilih Sumber Dana RAB yang akan Dibuat:", ["BOPTN", "PNBP"], horizontal=True, key="rb_buat")
         st.markdown("---")
@@ -386,6 +315,8 @@ def show_page():
             st.warning("⚠️ Master Database masih kosong! Buka tab Master Database lalu klik 'Restore Data Standar FIB'.")
         else:
             st.subheader("1. Klasifikasi Output RAB")
+            
+            # --- FILTER HIERARKI MENGGUNAKAN CASCADE (BERJENJANG) ---
             col_c1, col_c2 = st.columns(2)
             opsi_kro = df_m_kro[df_m_kro['Sumber_Dana'] == sumber_buat]["KRO"].tolist()
             pilih_kro = col_c1.selectbox("Pilih KRO", opsi_kro if opsi_kro else ["Tidak ada KRO"])
@@ -405,6 +336,7 @@ def show_page():
             col_u1, col_u2 = st.columns(2)
             rab_kegiatan = col_u1.text_input("Nama Kegiatan", placeholder="Contoh: Pemeliharaan Alat Operasional Pendukung TIK")
             
+            # Mengisi Sasaran Kegiatan secara otomatis dari narasi KRO
             _, kro_narasi = split_kode(pilih_kro) if pilih_kro else ("", "")
             kro_narasi_bersih = kro_narasi.strip("() ")
             default_sasaran = f"Peningkatan {kro_narasi_bersih}" if kro_narasi_bersih else ""
@@ -427,6 +359,7 @@ def show_page():
             
             template_detail = pd.DataFrame([{"Akun Belanja": opsi_akun[0], "Uraian Belanja": "", "Vol 1": 1, "Sat 1": "Unit", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
             
+            # Grid Input Data Belanja
             df_input_detail = st.data_editor(
                 template_detail, num_rows="dynamic", use_container_width=True, hide_index=True, key="grid_buat_rab",
                 column_config={
@@ -440,6 +373,7 @@ def show_page():
                 }
             )
 
+            # Menghitung otomatis Total Biaya per item
             df_input_detail["Vol_1_Num"] = pd.to_numeric(df_input_detail["Vol 1"]).fillna(1)
             df_input_detail["Vol_2_Num"] = pd.to_numeric(df_input_detail["Vol 2"]).fillna(1)
             df_input_detail.loc[df_input_detail["Vol_2_Num"] == 0, "Vol_2_Num"] = 1 # Hindari kali 0
@@ -463,6 +397,7 @@ def show_page():
                 if not rab_kegiatan or valid_detail.empty or pilih_pejabat is None:
                     st.error("Gagal! Pastikan Nama Kegiatan, Rincian Item Belanja, dan Master Pejabat sudah lengkap.")
                 else:
+                    # Logic Simpan Tabel Utama
                     id_rab_baru = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                     tgl_sekarang = datetime.now().strftime('%Y-%m-%d %H:%M')
                     dt_pjb = df_m_pejabat.loc[pilih_pejabat]
@@ -476,6 +411,7 @@ def show_page():
                     df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
                     save_table(df_rab_utama, "rab_utama")
                     
+                    # Logic Simpan Tabel Detail Belanja
                     valid_detail["ID_RAB"] = id_rab_baru
                     valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
                     valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
@@ -484,6 +420,9 @@ def show_page():
                     save_table(df_rab_detail, "rab_detail")
                     st.success(f"✅ RAB Resmi '{rab_kegiatan}' Berhasil Terbit!"); st.rerun()
 
+    # -----------------------------------------------------------------
+    # TAB 3: DAFTAR RAB TERSIMPAN & EXPORT (PDF/EXCEL)
+    # -----------------------------------------------------------------
     with tab_daftar:
         if df_rab_utama.empty: st.info("Belum ada dokumen RAB yang tersimpan.")
         else:
@@ -554,7 +493,7 @@ def show_page():
                     cell = ws.cell(row=rp, column=col_idx, value=text); cell.font = font_bold; cell.alignment = align_center; cell.border = border_all
                 rp += 1
 
-                # PRINT HIRARKI PADAT
+                # Fungsi Cetak Hierarki ke Baris Excel
                 def print_row(kode, urai, vol, hrg, tot, is_bold=False):
                     nonlocal rp
                     ws.cell(row=rp, column=1, value=kode).border = border_all
