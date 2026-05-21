@@ -1,44 +1,31 @@
 import streamlit as st
 import pandas as pd
 import os
-import sqlite3
 from io import BytesIO
+from sqlalchemy import create_engine # Pengganti sqlite3
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FILE_DB = os.path.join(BASE_DIR, "database_usulan_prodi.db")
-FILE_CSV_LAMA = os.path.join(BASE_DIR, "database_usulan_prodi.csv")
-UPLOAD_DIR = os.path.join(BASE_DIR, "tor_uploads")
+# --- KONEKSI KE CLOUD DATABASE ---
+DB_URL = st.secrets["DB_URL"]
+engine = create_engine(DB_URL)
 
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tor_uploads")
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
+# --- FUNGSI DATABASE KOMPILER PRODI ---
 def load_data():
-    conn = sqlite3.connect(FILE_DB)
-    cek_tabel = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='usulan'", conn)
-    
-    if cek_tabel.empty:
-        if os.path.exists(FILE_CSV_LAMA):
-            df = pd.read_csv(FILE_CSV_LAMA)
-            if "Status" not in df.columns: df["Status"] = "Menunggu Review"
-            if "Catatan_Fakultas" not in df.columns: df["Catatan_Fakultas"] = "-"
-            if "File_TOR" not in df.columns: df["File_TOR"] = "-"
-            df.to_sql("usulan", conn, if_exists="replace", index=False)
-            conn.close()
-            return df
-        else:
-            df_kosong = pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
-            df_kosong.to_sql("usulan", conn, if_exists="replace", index=False)
-            conn.close()
-            return df_kosong
-    else:
-        df = pd.read_sql("SELECT * FROM usulan", conn)
-        conn.close()
+    try:
+        # Membaca dari PostgreSQL
+        df = pd.read_sql("SELECT * FROM usulan", engine)
         return df
+    except:
+        # Jika error (tabel belum ada), buat baru
+        df_kosong = pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
+        df_kosong.to_sql("usulan", engine, if_exists="replace", index=False)
+        return df_kosong
 
 def save_data(df):
-    conn = sqlite3.connect(FILE_DB)
-    df.to_sql("usulan", conn, if_exists="replace", index=False)
-    conn.close()
+    df.to_sql("usulan", engine, if_exists="replace", index=False)
 
 def format_rupiah(x):
     try: return f"{float(x):,.0f}".replace(',', '.')
