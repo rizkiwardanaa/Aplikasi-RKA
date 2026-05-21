@@ -242,7 +242,7 @@ def show_page():
             if st.button("💾 Simpan KRO"): 
                 edit_kro['Sumber_Dana'] = sumber_master
                 df_sisa = df_m_kro[df_m_kro['Sumber_Dana'] != sumber_master]
-                save_table(pd.concat([df_sisa, edit_kro.dropna(subset=["KRO"])]), "rab_m_kro"); st.rerun()
+                save_table(pd.concat([df_sisa, edit_kro.dropna(subset=["KRO"])]), "rab_m_kro"); st.toast("Data Tersimpan!")
                 
             st.markdown(f"**3. Master Komponen ({sumber_master})**")
             df_komp_f = df_m_komp[df_m_komp['Sumber_Dana'] == sumber_master].copy()
@@ -251,7 +251,7 @@ def show_page():
             if st.button("💾 Simpan Komponen"): 
                 edit_komp['Sumber_Dana'] = sumber_master
                 df_sisa = df_m_komp[df_m_komp['Sumber_Dana'] != sumber_master]
-                save_table(pd.concat([df_sisa, edit_komp.dropna(subset=["Komponen"])]), "rab_m_komp"); st.rerun()
+                save_table(pd.concat([df_sisa, edit_komp.dropna(subset=["Komponen"])]), "rab_m_komp"); st.toast("Data Tersimpan!")
 
             st.markdown(f"**5. Master Akun Belanja ({sumber_master})**")
             df_akun_f = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_master].copy()
@@ -267,7 +267,7 @@ def show_page():
             if st.button("💾 Simpan Akun Belanja"): 
                 edit_akun['Sumber_Dana'] = sumber_master
                 df_sisa = df_m_akun[df_m_akun['Sumber_Dana'] != sumber_master]
-                save_table(pd.concat([df_sisa, edit_akun.dropna(subset=["Account_Code", "Sub_Komponen"])]), "rab_m_akun"); st.rerun()
+                save_table(pd.concat([df_sisa, edit_akun.dropna(subset=["Account_Code", "Sub_Komponen"])]), "rab_m_akun"); st.toast("Data Tersimpan!")
 
         with col_m2:
             st.markdown(f"**2. Master RO ({sumber_master})**")
@@ -277,7 +277,7 @@ def show_page():
             if st.button("💾 Simpan RO"): 
                 edit_ro['Sumber_Dana'] = sumber_master
                 df_sisa = df_m_ro[df_m_ro['Sumber_Dana'] != sumber_master]
-                save_table(pd.concat([df_sisa, edit_ro.dropna(subset=["RO"])]), "rab_m_ro"); st.rerun()
+                save_table(pd.concat([df_sisa, edit_ro.dropna(subset=["RO"])]), "rab_m_ro"); st.toast("Data Tersimpan!")
             
             st.markdown(f"**4. Master Sub-Komponen ({sumber_master})**")
             df_sub_f = df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_master].copy()
@@ -286,11 +286,11 @@ def show_page():
             if st.button("💾 Simpan Sub-Komponen"): 
                 edit_subkomp['Sumber_Dana'] = sumber_master
                 df_sisa = df_m_subkomp[df_m_subkomp['Sumber_Dana'] != sumber_master]
-                save_table(pd.concat([df_sisa, edit_subkomp.dropna(subset=["Sub_Komponen"])]), "rab_m_subkomp"); st.rerun()
+                save_table(pd.concat([df_sisa, edit_subkomp.dropna(subset=["Sub_Komponen"])]), "rab_m_subkomp"); st.toast("Data Tersimpan!")
 
             st.markdown("**6. Master Pejabat (Bebas Sumber Dana)**")
             edit_pejabat = st.data_editor(df_m_pejabat, num_rows="dynamic", use_container_width=True, hide_index=True, key="me_pej")
-            if st.button("💾 Simpan Data Pejabat"): save_table(edit_pejabat.dropna(how='all'), "rab_m_pejabat"); st.rerun()
+            if st.button("💾 Simpan Data Pejabat"): save_table(edit_pejabat.dropna(how='all'), "rab_m_pejabat"); st.toast("Data Tersimpan!")
 
     # -----------------------------------------------------------------
     # TAB 2: BUAT RAB BARU
@@ -406,7 +406,7 @@ def show_page():
                     
                     df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
                     save_table(df_rab_detail, "rab_detail")
-                    st.success(f"✅ RAB Resmi '{rab_kegiatan}' Berhasil Terbit!"); st.rerun()
+                    st.success(f"✅ RAB Resmi '{rab_kegiatan}' Berhasil Terbit!"); st.toast("Data Tersimpan!")
 
     # -----------------------------------------------------------------
     # TAB 3: DAFTAR RAB TERSIMPAN & EXPORT (PDF/EXCEL)
