@@ -2,35 +2,49 @@ import streamlit as st
 import pandas as pd
 import os
 from io import BytesIO
-from sqlalchemy import create_engine # Pengganti sqlite3
+from sqlalchemy import create_engine
 
-# --- KONEKSI KE CLOUD DATABASE ---
+# =====================================================================
+# KONEKSI KE CLOUD DATABASE (NEON POSTGRESQL)
+# =====================================================================
 DB_URL = st.secrets["DB_URL"]
-engine = create_engine(DB_URL)
+
+# Menggunakan Connection Pooling agar database cloud tidak lambat/lag
+engine = create_engine(DB_URL, pool_size=10, max_overflow=20, pool_timeout=30)
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tor_uploads")
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# --- FUNGSI DATABASE KOMPILER PRODI ---
+# =====================================================================
+# FUNGSI DATABASE KOMPILER PRODI
+# =====================================================================
+@st.cache_data(ttl=300) # Cache 5 menit: Mengurangi lag saat loading dashboard
 def load_data():
     try:
         # Membaca dari PostgreSQL
-        df = pd.read_sql("SELECT * FROM usulan", engine)
+        conn = engine.connect()
+        df = pd.read_sql("SELECT * FROM usulan", conn)
+        conn.close()
         return df
     except:
-        # Jika error (tabel belum ada), buat baru
+        # Jika error (tabel belum ada), buat baru secara otomatis
         df_kosong = pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
         df_kosong.to_sql("usulan", engine, if_exists="replace", index=False)
         return df_kosong
 
 def save_data(df):
+    """Menyimpan data ke Cloud dan menghapus cache agar layar langsung ter-update"""
     df.to_sql("usulan", engine, if_exists="replace", index=False)
+    load_data.clear() # Penting: Me-reset memori agar data baru langsung muncul
 
 def format_rupiah(x):
     try: return f"{float(x):,.0f}".replace(',', '.')
     except (ValueError, TypeError): return x
 
+# =====================================================================
+# FUNGSI CETAK LAPORAN (HTML & EXCEL)
+# =====================================================================
 def generate_html_report(df_data, nama_prodi, hidden=False):
     html = f"""
     <!DOCTYPE html>
@@ -73,7 +87,7 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
                 <h3>FAKULTAS ILMU BUDAYA</h3>
                 <p>Jl. Ki Hajar Dewantara, Kampus Gunung Kelua, Samarinda 75123</p>
                 <p>Telepon (0541) 7809033</p>
-                <p>Laman http://fib.unmul.ac.id   Surel fib@unmul.ac.id</p>
+                <p>Laman http://fib.unmul.ac.id   Surel fib@unmul.ac.id</p>
             </div>
         </div>
         <div class="judul-laporan">
@@ -97,7 +111,7 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
             cat = df_k["Catatan_Fakultas"].iloc[0]
             teks_tot = "Rp ***" if hidden else f"Rp {format_rupiah(tot)}"
             
-            html += f'<div class="block-kegiatan"><div class="header-kegiatan">{idx+1}. {keg.upper()}  |  {teks_tot}  |  [{stat}]</div>'
+            html += f'<div class="block-kegiatan"><div class="header-kegiatan">{idx+1}. {keg.upper()}  |  {teks_tot}  |  [{stat}]</div>'
             if cat != "-": html += f'<div class="catatan-review"><strong>Catatan Review:</strong> {cat}</div>'
             html += '<table class="tabel-rincian"><thead><tr><th style="width: 50%; text-align: left;">Rincian Belanja</th><th style="width: 10%;">Vol</th><th style="width: 15%;">Satuan</th>'
             if not hidden: html += '<th style="width: 12%; text-align: right;">Harga Satuan</th><th style="width: 13%; text-align: right;">Total</th>'
@@ -136,9 +150,13 @@ def generate_excel(df_to_save, nama_sheet):
         df_to_save.to_excel(writer, index=False, sheet_name=nama_sheet)
     return output.getvalue()
 
-# --- FUNGSI UTAMA HALAMAN KOMPILER ---
+
+# =====================================================================
+# FUNGSI UTAMA HALAMAN KOMPILER (RENDER UI)
+# =====================================================================
 def show_page():
-    df_usulan = load_data()
+    # Menggunakan .copy() agar dataframe cache tidak termutasi (berubah) di memori
+    df_usulan = load_data().copy()
     
     # ----------------------------------------------------
     # TAMPILAN PRODI
