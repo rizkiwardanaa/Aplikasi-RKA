@@ -462,7 +462,8 @@ def show_page():
 
             st.markdown(f"**5. Master Akun Belanja ({sumber_master})**")
             df_akun_f = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_master].copy()
-            edit_akun = st.data_editor(df_akun_f[["Sub_Komponen", "Account_Code", "Account_Name"]], num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"Sub_Komponen": st.column_config.SelectboxColumn(options=df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_master]["Sub_Komponen"].tolist())}, key="me_akun")
+            list_sub = df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_master]["Sub_Komponen"].tolist()
+            edit_akun = st.data_editor(df_akun_f[["Sub_Komponen", "Account_Code", "Account_Name"]], num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"Sub_Komponen": st.column_config.SelectboxColumn(options=list_sub if list_sub else ["-"])}, key="me_akun")
             if st.button("💾 Simpan Akun Belanja"): 
                 edit_akun['Sumber_Dana'] = sumber_master
                 save_table(pd.concat([df_m_akun[df_m_akun['Sumber_Dana'] != sumber_master], edit_akun.dropna(subset=["Account_Code", "Sub_Komponen"])]), "rab_m_akun"); st.rerun()
@@ -470,14 +471,16 @@ def show_page():
         with col_m2:
             st.markdown(f"**2. Master RO ({sumber_master})**")
             df_ro_f = df_m_ro[df_m_ro['Sumber_Dana'] == sumber_master].copy()
-            edit_ro = st.data_editor(df_ro_f[["KRO", "RO"]], num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"KRO": st.column_config.SelectboxColumn(options=df_m_kro[df_m_kro['Sumber_Dana'] == sumber_master]["KRO"].tolist())}, key="me_ro")
+            list_kro = df_m_kro[df_m_kro['Sumber_Dana'] == sumber_master]["KRO"].tolist()
+            edit_ro = st.data_editor(df_ro_f[["KRO", "RO"]], num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"KRO": st.column_config.SelectboxColumn(options=list_kro)}, key="me_ro")
             if st.button("💾 Simpan RO"): 
                 edit_ro['Sumber_Dana'] = sumber_master
                 save_table(pd.concat([df_m_ro[df_m_ro['Sumber_Dana'] != sumber_master], edit_ro.dropna(subset=["RO"])]), "rab_m_ro"); st.rerun()
             
             st.markdown(f"**4. Master Sub-Komponen ({sumber_master})**")
             df_sub_f = df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_master].copy()
-            edit_subkomp = st.data_editor(df_sub_f[["Komponen", "Sub_Komponen"]], num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"Komponen": st.column_config.SelectboxColumn(options=df_m_komp[df_m_komp['Sumber_Dana'] == sumber_master]["Komponen"].tolist())}, key="me_subkomp")
+            list_komp = df_m_komp[df_m_komp['Sumber_Dana'] == sumber_master]["Komponen"].tolist()
+            edit_subkomp = st.data_editor(df_sub_f[["Komponen", "Sub_Komponen"]], num_rows="dynamic", use_container_width=True, hide_index=True, column_config={"Komponen": st.column_config.SelectboxColumn(options=list_komp)}, key="me_subkomp")
             if st.button("💾 Simpan Sub-Komponen"): 
                 edit_subkomp['Sumber_Dana'] = sumber_master
                 save_table(pd.concat([df_m_subkomp[df_m_subkomp['Sumber_Dana'] != sumber_master], edit_subkomp.dropna(subset=["Sub_Komponen"])]), "rab_m_subkomp"); st.rerun()
@@ -615,18 +618,20 @@ def show_page():
                         if is_edit_mode and def_versi == rab_versi:
                             df_rab_utama = df_rab_utama[df_rab_utama["ID_RAB"] != st.session_state.edit_rab_id]
                             df_rab_detail = df_rab_detail[df_rab_detail["ID_RAB"] != st.session_state.edit_rab_id]
-                        else:
-                            df_rab_utama.loc[(df_rab_utama["Kegiatan"].str.strip().str.lower() == rab_kegiatan.strip().lower()) & (df_rab_utama["Tahun"] == tahun_aktif), "Is_Active"] = 0
                             
                         id_rab_baru = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         dt_pjb = df_m_pejabat.loc[pilih_pejabat]
                         
+                        # Set default active: if this version is currently the active version, keep it active
+                        active_vs = df_rab_utama[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
+                        is_act = 1 if len(active_vs) == 0 or rab_versi in active_vs else 0
+
                         new_utama = pd.DataFrame([{
                             "ID_RAB": id_rab_baru, "Tanggal": datetime.now().strftime('%Y-%m-%d %H:%M'), "Tahun": tahun_aktif, "Tgl_Cetak": str(tgl_cetak),
                             "Sumber_Dana": sumber_buat, "KRO": pilih_kro, "RO": pilih_ro, "Komponen": pilih_komp, "Sub_Komponen": pilih_subkomp,
                             "Kegiatan": rab_kegiatan.strip(), "Sasaran": rab_sasaran, "Volume": rab_vol, "Satuan": rab_satuan, "Alokasi": total_rab_live,
                             "Jabatan": dt_pjb['Jabatan'], "Nama_Pejabat": dt_pjb['Nama'], "NIP_Pejabat": dt_pjb['NIP'],
-                            "Versi_RAB": rab_versi, "Is_Active": 1
+                            "Versi_RAB": rab_versi, "Is_Active": is_act
                         }])
                         df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
                         save_table(df_rab_utama, "rab_utama")
@@ -642,7 +647,7 @@ def show_page():
                         st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
 
     # -----------------------------------------------------------------
-    # TAB 3: ARSIP & MANAJEMEN VERSI RAB (DENGAN FIX BUG COPY MASSAL)
+    # TAB 3: ARSIP & MANAJEMEN VERSI RAB (DENGAN FIX BUG COPY MASSAL & CETAK)
     # -----------------------------------------------------------------
     with tab_daftar:
         df_utama_thn = df_rab_utama[df_rab_utama['Tahun'] == tahun_aktif]
@@ -652,60 +657,69 @@ def show_page():
             st.subheader("📂 Arsip & Manajemen Versi")
             col_a1, col_a2 = st.columns(2)
             versi_list_aktif = sorted(df_utama_thn['Versi_RAB'].unique())
-            pilih_v_arsip = col_a1.selectbox("1. Pilih Versi:", versi_list_aktif)
+            pilih_v_arsip = col_a1.selectbox("1. Pilih Versi (Untuk Difilter):", versi_list_aktif)
             
             df_v_terpilih = df_utama_thn[df_utama_thn['Versi_RAB'] == pilih_v_arsip]
+            
+            # PANEL STATUS VERSI GLOBAL
+            is_v_active = 1 if 1 in df_v_terpilih['Is_Active'].values else 0
+            if is_v_active == 1:
+                st.success(f"✅ **STATUS VERSI: AKTIF (FINAL ACUAN)**. Seluruh kegiatan pada versi '{pilih_v_arsip}' ditarik ke dalam Rekapitulasi Global RKAKL.")
+            else:
+                st.warning(f"🗄️ **STATUS VERSI: ARSIP REVISI (TIDAK AKTIF)**. Versi ini disimpan sebagai rekaman sejarah anggaran.")
+                if st.button(f"🔄 Jadikan Seluruh Kegiatan di Versi '{pilih_v_arsip}' Sebagai Acuan Aktif", type="primary"):
+                    df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
+                    df_rab_utama.loc[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Versi_RAB'] == pilih_v_arsip), 'Is_Active'] = 1
+                    save_table(df_rab_utama, "rab_utama")
+                    st.toast(f"Versi {pilih_v_arsip} Berhasil Diaktifkan!")
+                    st.rerun()
+
+            st.markdown("---")
+
             keg_list_aktif = sorted(df_v_terpilih['Kegiatan'].unique())
-            pilih_keg_arsip = col_a2.selectbox("2. Pilih Kegiatan:", keg_list_aktif, format_func=lambda x: x.title())
+            pilih_keg_arsip = col_a2.selectbox(f"2. Pilih Kegiatan (Dalam Versi {pilih_v_arsip}):", keg_list_aktif, format_func=lambda x: x.title())
             
             with st.expander(f"📋 Duplikasi Seluruh Kegiatan Versi '{pilih_v_arsip}' ke Versi Lain"):
-                st.write("Salin seluruh kegiatan pada versi ini ke versi baru sekaligus. Cocok digunakan sebelum membuat matrik revisi.")
+                st.write("Salin seluruh kegiatan pada versi ini ke versi baru sekaligus. Sangat cocok digunakan sebelum membuat revisi RKAKL.")
                 target_versi = st.selectbox("Pilih Target Versi Baru:", ["Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4"])
                 if st.button(f"🚀 Salin Semua ke '{target_versi}'", type="primary"):
+                    # Nonaktifkan versi lama di tahun yang sama
+                    df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
                     for i, (_, row_keg) in enumerate(df_v_terpilih.iterrows()):
-                        df_rab_utama.loc[(df_rab_utama["Kegiatan"] == row_keg['Kegiatan']) & (df_rab_utama["Tahun"] == tahun_aktif), "Is_Active"] = 0
                         new_row = row_keg.copy()
-                        # DITAMBAHKAN %f (Microseconds) AGAR ID_RAB 100% UNIK WALAU DI LOOPING CEPAT
                         new_id = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{i}"
                         new_row['ID_RAB'] = new_id
                         new_row['Versi_RAB'] = target_versi
                         new_row['Is_Active'] = 1
                         df_rab_utama = pd.concat([df_rab_utama, pd.DataFrame([new_row])], ignore_index=True)
                         
-                        # FILTER SPECIFIC ID_RAB AGAR TIDAK BENGKAK
                         old_id = row_keg['ID_RAB']
                         det_keg_lama = df_rab_detail[df_rab_detail['ID_RAB'] == old_id].copy()
                         det_keg_lama['ID_RAB'] = new_id
                         df_rab_detail = pd.concat([df_rab_detail, det_keg_lama], ignore_index=True)
                         
                     save_table(df_rab_utama, "rab_utama"); save_table(df_rab_detail, "rab_detail")
-                    st.success(f"Berhasil menduplikasi ke {target_versi}!"); st.rerun()
+                    st.success(f"Berhasil menduplikasi ke {target_versi} dan versi tersebut langsung diaktifkan!"); st.rerun()
 
             if pilih_keg_arsip:
                 head_terpilih = df_v_terpilih[df_v_terpilih['Kegiatan'] == pilih_keg_arsip]
                 id_rab_aktif = head_terpilih['ID_RAB'].iloc[0]
-                status_aktif = head_terpilih['Is_Active'].iloc[0]
                 detail_terpilih = df_rab_detail[df_rab_detail["ID_RAB"] == id_rab_aktif]
                 
-                c_btn1, c_btn2 = st.columns(2)
-                with c_btn1:
-                    if st.button("✏️ Edit Kegiatan Ini", use_container_width=True):
-                        st.session_state.edit_rab_id = id_rab_aktif; st.rerun()
-                with c_btn2:
-                    if status_aktif == 0:
-                        if st.button("🔄 Jadikan Versi Ini Aktif", use_container_width=True):
-                            df_rab_utama.loc[(df_rab_utama['Kegiatan'] == pilih_keg_arsip) & (df_rab_utama['Tahun'] == tahun_aktif), 'Is_Active'] = 0
-                            df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_rab_aktif, 'Is_Active'] = 1
-                            save_table(df_rab_utama, "rab_utama"); st.rerun()
-                    else:
-                        st.success("✅ Versi Aktif")
+                if st.button("✏️ Edit Kegiatan Ini", use_container_width=True, type="secondary"):
+                    st.session_state.edit_rab_id = id_rab_aktif; st.rerun()
 
                 st.markdown("---")
                 df_view = detail_terpilih.copy()
                 df_view['Kode Akun'] = df_view['Akun_Belanja'].apply(lambda x: split_kode(x)[0])
                 df_view['Nama Akun Belanja'] = df_view['Akun_Belanja'].apply(lambda x: split_kode(x)[1])
                 df_view['Volume & Satuan'] = df_view.apply(lambda r: get_vol_sat_combined(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2']), axis=1)
-                st.markdown(f"**Identitas Kegiatan:** {kegiatan_code_map.get(pilih_keg_arsip, '0000')} - {pilih_keg_arsip.title()}")
+                
+                keg_code_view = kegiatan_code_map.get(pilih_keg_arsip, "0000")
+                s_dana = head_terpilih.get('Sumber_Dana', pd.Series(['BOPTN'])).iloc[0]
+                st.markdown(f"**Identitas Kegiatan:** {keg_code_view} - {pilih_keg_arsip.title()}")
+                st.markdown(f"**Klasifikasi Dokumen:** {head_terpilih['KRO'].iloc[0]} ➔ {head_terpilih['RO'].iloc[0]}")
+                st.markdown(f"**Total Alokasi Anggaran ({s_dana}):** Rp {format_rupiah(detail_terpilih['Total_Biaya'].sum())}")
                 st.dataframe(df_view[["Kode Akun", "Nama Akun Belanja", "Uraian", "Volume & Satuan", "Harga_Satuan", "Total_Biaya"]].style.format({"Harga_Satuan": format_rupiah, "Total_Biaya": format_rupiah}), hide_index=True, use_container_width=True)
 
                 st.markdown("#### 🖨️ Cetak Dokumen Satuan")
@@ -715,7 +729,7 @@ def show_page():
                 with col_x2:
                     st.download_button("📑 Download PDF (Web)", data=export_pdf_rab(head_terpilih, detail_terpilih, "Portrait", kegiatan_code_map).encode('utf-8'), file_name=f"RAB_{pilih_keg_arsip}_{pilih_v_arsip}.html", mime="text/html", use_container_width=True)
                 with col_x3:
-                    if st.button("🗑️ Hapus Versi Ini", type="secondary", use_container_width=True):
+                    if st.button("🗑️ Hapus Dokumen Ini", type="secondary", use_container_width=True):
                         df_rab_utama = df_rab_utama[df_rab_utama["ID_RAB"] != id_rab_aktif]
                         df_rab_detail = df_rab_detail[df_rab_detail["ID_RAB"] != id_rab_aktif]
                         save_table(df_rab_utama, "rab_utama"); save_table(df_rab_detail, "rab_detail"); st.rerun()
