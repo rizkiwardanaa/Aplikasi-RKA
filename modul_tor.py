@@ -47,7 +47,7 @@ def load_active_rab():
 def generate_narasi_tor(kegiatan, total_anggaran, sasaran, list_belanja, poin_tambahan):
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-3.1-flash-lite')
         
         prompt = f"""
         Anda adalah perencana anggaran ahli di Fakultas Ilmu Budaya Universitas Mulawarman. 
