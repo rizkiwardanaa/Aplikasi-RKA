@@ -57,7 +57,6 @@ def load_active_rab():
 # --- FUNGSI AI GEMINI (JSON MODE) ---
 # --- FUNGSI AI GEMINI (JSON MODE) ---
 def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, poin_tambahan):
-    # TAMBAHKAN INI UNTUK DEBUGGING
     st.write(f"DEBUG: Kunci terbaca: {st.secrets.get('GEMINI_API_KEY_NEW', 'KOSONG')[:5]}...")
     
     prompt = f"""
@@ -79,26 +78,48 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY_NEW"])
         
-        # Percobaan 1: Menggunakan model 1.5 flash
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        respons = model.generate_content(prompt)
-        teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(teks_respons)
+        # 1. TANYA GOOGLE: Minta menu model yang tersedia hari ini
+        daftar_model = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                daftar_model.append(m.name)
+                
+        if not daftar_model:
+            st.error("❌ Gagal: Akun API Key Anda belum diberikan akses ke model AI apa pun oleh Google.")
+            return None
+            
+        # Tampilkan di layar model apa saja yang terdeteksi
+        st.info(f"🔍 Diagnostik: Model yang terdeteksi tersedia di server Anda: {', '.join(daftar_model)}")
         
-    except Exception as e:
-        st.error(f"⚠️ Percobaan Pertama Gagal. Detail: {e}")
+        # 2. PILIH OTOMATIS: Cari model 'flash' atau 'pro', jika tidak ada, ambil urutan pertama
+        model_terpilih = daftar_model[0]
+        for m in daftar_model:
+            if 'flash' in m:
+                model_terpilih = m
+                break
+            elif 'pro' in m and 'vision' not in m:
+                model_terpilih = m
+                
+        nama_bersih = model_terpilih.replace("models/", "")
+        st.write(f"DEBUG: Mengeksekusi menggunakan model -> {nama_bersih}")
         
-        # Logika Cadangan
+        # 3. EKSEKUSI
         try:
-            st.warning("🔄 Mencoba model cadangan (gemini-1.0-pro)...")
-            # PERUBAHAN NAMA MODEL ADA DI SINI
-            model = genai.GenerativeModel('gemini-1.0-pro') 
+            # Percobaan eksekusi dengan nama tanpa prefix
+            model = genai.GenerativeModel(nama_bersih)
             respons = model.generate_content(prompt)
             teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
             return json.loads(teks_respons)
-        except Exception as e2:
-            st.error(f"❌ Gagal total menghubungi Gemini. Error: {e2}")
-            return None
+        except Exception:
+            # Percobaan eksekusi cadangan dengan nama ber-prefix
+            model = genai.GenerativeModel(model_terpilih)
+            respons = model.generate_content(prompt)
+            teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
+            return json.loads(teks_respons)
+            
+    except Exception as e:
+        st.error(f"❌ Gagal total menghubungi server AI. Detail Error: {e}")
+        return None
         teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
         return json.loads(teks_respons)
         
