@@ -57,6 +57,8 @@ def load_active_rab():
 
 # --- FUNGSI AI GEMINI (JSON MODE) ---
 def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, poin_tambahan):
+    # TAMBAHKAN INI UNTUK DEBUGGING
+    st.write(f"DEBUG: Kunci terbaca: {st.secrets.get('GEMINI_API_KEY', 'KOSONG')[:5]}...")
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         
