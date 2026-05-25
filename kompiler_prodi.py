@@ -57,8 +57,7 @@ with st.sidebar:
         ]
     else:
         menu_options = [
-            "1. Dashboard Kompiler Usulan", 
-            "2. Generator TOR Otomatis"
+            "1. Dashboard Kompiler Usulan"
         ]
         
     menu_pilihan = st.radio("📍 Navigasi Menu:", menu_options)
