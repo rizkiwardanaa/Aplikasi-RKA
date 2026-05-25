@@ -60,36 +60,37 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         
-        # 1. Gunakan model yang paling umum dan pasti tersedia
-        # Ubah baris model menjadi menggunakan prefix 'models/'
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 1. Minta daftar model yang BENAR-BENAR TERSEDIA di akun Anda saat ini
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
         
+        # 2. Pilih model yang paling cocok secara otomatis
+        target_model = 'gemini-1.5-flash' # Model andalan saat ini
+        if f"models/{target_model}" not in available_models:
+            # Jika 1.5-flash tidak ada, cari model apa saja yang tersedia
+            target_model = available_models[0].replace("models/", "")
+            
+        model = genai.GenerativeModel(target_model)
+        
+        # 3. Lanjutkan proses prompt dengan model yang sudah terdeteksi valid
         prompt = f"""
         Anda adalah perencana anggaran ahli di Fakultas Ilmu Budaya Universitas Mulawarman. 
-        Tugas Anda adalah menulis komponen isi untuk Term of Reference (TOR) berdasarkan data berikut:
+        Tugas Anda adalah menulis komponen isi untuk Term of Reference (TOR) berdasarkan data:
+        - Kegiatan: {kegiatan}, Sasaran: {sasaran}, Dana: {total_anggaran}, Item: {list_belanja}.
         
-        - Nama Kegiatan: {kegiatan}
-        - Sasaran: {sasaran}
-        - Total Dana: Rp {total_anggaran}
-        - Item Utama: {list_belanja}
-        - Catatan: {poin_tambahan}
-        
-        Kembalikan output murni dalam format JSON (tanpa blok kode markdown ```json) dengan kunci persis seperti ini:
-        {{
-            "dasar_hukum": "Tuliskan 3-4 dasar hukum yang relevan dengan kegiatan ini.",
-            "gambaran_umum": "Tuliskan 2 paragraf gambaran umum mengapa kegiatan ini penting.",
-            "penerima_manfaat": "Jelaskan siapa penerima manfaat dari kegiatan ini dalam 1 paragraf.",
-            "metode_pelaksanaan": "Jelaskan bagaimana metode pelaksanaan kegiatan ini dalam 1 paragraf.",
-            "tahapan_waktu": "Jelaskan tahapan dan waktu pelaksanaan secara singkat.",
-            "biaya_diperlukan": "Tulis 1 paragraf naratif bahwa total anggaran adalah Rp {total_anggaran} dari dana FIB Unmul."
-        }}
+        Kembalikan output JSON (tanpa markdown) dengan kunci: 
+        "dasar_hukum", "gambaran_umum", "penerima_manfaat", "metode_pelaksanaan", "tahapan_waktu", "biaya_diperlukan".
         """
         
         respons = model.generate_content(prompt)
-        # Tambahan: Bersihkan karakter markdown jika AI memberikan respons berlebih
         teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
-            
         return json.loads(teks_respons)
+        
+    except Exception as e:
+        st.error(f"Gagal total. Error Teknis: {e}")
+        return None
         
     except Exception as e:
         # Logika Cadangan: Jika 1.5-flash gagal, kita gunakan model yang paling "tua" tapi paling stabil
