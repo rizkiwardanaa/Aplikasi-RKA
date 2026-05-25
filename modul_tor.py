@@ -187,7 +187,7 @@ def build_docx(meta, narasi):
     add_meta_row("Satuan RO", meta['sat'])
 
     # BAB A
-    doc.add_paragraph("\nA. Latar Belakang").bold = True
+    doc.add_paragraph("A. Latar Belakang").bold = True
     doc.add_paragraph("1. Dasar Hukum").bold = True
     doc.add_paragraph(narasi.get('dasar_hukum', ''))
     
