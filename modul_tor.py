@@ -60,7 +60,6 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
     # TAMBAHKAN INI UNTUK DEBUGGING
     st.write(f"DEBUG: Kunci terbaca: {st.secrets.get('GEMINI_API_KEY_NEW', 'KOSONG')[:5]}...")
     
-    # 1. PINDAHKAN PROMPT KE SINI (Paling Atas)
     prompt = f"""
     Anda adalah perencana anggaran ahli di Fakultas Ilmu Budaya Universitas Mulawarman. 
     Tugas Anda adalah menulis komponen isi untuk Term of Reference (TOR) berdasarkan data:
@@ -80,20 +79,26 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY_NEW"])
         
-        # Minta daftar model
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        # Pilih model otomatis
-        target_model = 'gemini-1.5-flash'
-        if f"models/{target_model}" not in available_models:
-            target_model = available_models[0].replace("models/", "")
-            
-        model = genai.GenerativeModel(target_model)
-        
+        # Percobaan 1: Menggunakan model 1.5 flash
+        model = genai.GenerativeModel('gemini-1.5-flash')
         respons = model.generate_content(prompt)
+        teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(teks_respons)
+        
+    except Exception as e:
+        st.error(f"⚠️ Percobaan Pertama Gagal. Detail: {e}")
+        
+        # Logika Cadangan
+        try:
+            st.warning("🔄 Mencoba model cadangan (gemini-1.0-pro)...")
+            # PERUBAHAN NAMA MODEL ADA DI SINI
+            model = genai.GenerativeModel('gemini-1.0-pro') 
+            respons = model.generate_content(prompt)
+            teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
+            return json.loads(teks_respons)
+        except Exception as e2:
+            st.error(f"❌ Gagal total menghubungi Gemini. Error: {e2}")
+            return None
         teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
         return json.loads(teks_respons)
         
