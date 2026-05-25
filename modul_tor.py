@@ -61,8 +61,8 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         
         # 1. Gunakan model yang paling umum dan pasti tersedia
-        # 'gemini-3.1-flash-lite' adalah model yang sangat cepat dan hemat kuota
-        model = genai.GenerativeModel('gemini-3.1-flash-lite')
+        # Ubah baris model menjadi menggunakan prefix 'models/'
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
         
         prompt = f"""
         Anda adalah perencana anggaran ahli di Fakultas Ilmu Budaya Universitas Mulawarman. 
