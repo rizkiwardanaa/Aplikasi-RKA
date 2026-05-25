@@ -3,14 +3,13 @@ import pandas as pd
 from sqlalchemy import create_engine
 import google.generativeai as genai
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 import json
 from datetime import datetime
 
 # --- KONEKSI DATABASE ---
-# --- GANTI BAGIAN KONEKSI DATABASE DI modul_tor.py DENGAN INI ---
 @st.cache_resource
 def get_engine():
     # Menggunakan cache_resource agar engine hanya dibuat sekali untuk seluruh aplikasi
@@ -57,31 +56,34 @@ def load_active_rab():
 
 # --- FUNGSI AI GEMINI (JSON MODE) ---
 def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, poin_tambahan):
-    # TAMBAHKAN INI UNTUK DEBUGGING
+    # Cek koneksi key di terminal log
     st.write(f"DEBUG: Kunci terbaca: {st.secrets.get('GEMINI_API_KEY_NEW', 'KOSONG')[:5]}...")
     try:
-        # Ubah dari st.secrets["GEMINI_API_KEY"] menjadi:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY_NEW"])
         
-        # 1. Minta daftar model yang BENAR-BENAR TERSEDIA di akun Anda saat ini
         available_models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 available_models.append(m.name)
         
-        # 2. Pilih model yang paling cocok secara otomatis
-        target_model = 'gemini-1.5-flash' # Model andalan saat ini
+        target_model = 'gemini-1.5-flash'
         if f"models/{target_model}" not in available_models:
-            # Jika 1.5-flash tidak ada, cari model apa saja yang tersedia
             target_model = available_models[0].replace("models/", "")
             
         model = genai.GenerativeModel(target_model)
         
-        # 3. Lanjutkan proses prompt dengan model yang sudah terdeteksi valid
         prompt = f"""
         Anda adalah perencana anggaran ahli di Fakultas Ilmu Budaya Universitas Mulawarman. 
         Tugas Anda adalah menulis komponen isi untuk Term of Reference (TOR) berdasarkan data:
         - Kegiatan: {kegiatan}, Sasaran: {sasaran}, Dana: {total_anggaran}, Item: {list_belanja}.
+        
+        ATURAN PENULISAN (SANGAT PENTING):
+        1. "dasar_hukum": Tuliskan 3-4 dasar hukum dengan format bullet.
+        2. "gambaran_umum": Wajib berupa SATU PARAGRAF PANJANG yang mendetail. Elaborasi alasan kegiatan ini penting. Di dalam paragraf ini, rangkai juga referensi mengenai Peraturan Menteri Pendidikan atau perundang-undangan relevan ke dalam bentuk kalimat yang mengalir (bukan poin/bullet).
+        3. "penerima_manfaat": Wajib berupa SATU PARAGRAF yang padat dan mendetail. Uraikan dengan jelas siapa saja yang merasakan manfaat secara langsung maupun tidak langsung.
+        4. "metode_pelaksanaan": Wajib berupa SATU PARAGRAF yang mendetail dan komprehensif, hindari penjelasan yang terlalu singkat.
+        5. "tahapan_waktu": Wajib berupa SATU PARAGRAF naratif yang mendetail mengenai alur dari persiapan hingga pelaporan.
+        6. "biaya_diperlukan": Wajib berupa SATU PARAGRAF mendetail yang menegaskan bahwa total anggaran kegiatan sebesar Rp {total_anggaran} bersumber dari dana FIB Unmul, dikelola sesuai standar efisiensi, tanpa merinci item per item belanja.
         
         Kembalikan output JSON (tanpa markdown) dengan kunci: 
         "dasar_hukum", "gambaran_umum", "penerima_manfaat", "metode_pelaksanaan", "tahapan_waktu", "biaya_diperlukan".
@@ -92,13 +94,8 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
         return json.loads(teks_respons)
         
     except Exception as e:
-        st.error(f"Gagal total. Error Teknis: {e}")
-        return None
-        
-    except Exception as e:
-        # Logika Cadangan: Jika 1.5-flash gagal, kita gunakan model yang paling "tua" tapi paling stabil
         try:
-            st.warning("Model 3.1-flash-lite gagal, mencoba model cadangan (gemini-pro)...")
+            st.warning("Model utama gagal, mencoba model cadangan (gemini-pro)...")
             model = genai.GenerativeModel('gemini-pro')
             respons = model.generate_content(prompt)
             teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
@@ -111,6 +108,15 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
 def build_docx(meta, narasi):
     doc = Document()
     
+    # SETTING MARGIN (Top: 2cm, Bottom: 2cm, Left: 2.2cm, Right: 2.2cm, Gutter: 0)
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Cm(2.0)
+        section.bottom_margin = Cm(2.0)
+        section.left_margin = Cm(2.2)
+        section.right_margin = Cm(2.2)
+        section.gutter = Cm(0)
+    
     # KOP & JUDUL
     p_judul = doc.add_paragraph()
     p_judul.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -118,9 +124,14 @@ def build_docx(meta, narasi):
     r_judul.bold = True
     r_judul.font.size = Pt(12)
     
+    # SUB JUDUL KEGIATAN
+    r_subjudul = p_judul.add_run(f"{str(meta['keg_title']).upper()}")
+    r_subjudul.bold = True
+    r_subjudul.font.size = Pt(12)
+    
     # METADATA TABLE (Borderless)
+    doc.add_paragraph() # Spasi sebelum tabel
     table = doc.add_table(rows=0, cols=3)
-    # Atur lebar kolom (rasio)
     for row in table.rows:
         row.cells[0].width = Inches(2.0)
         row.cells[1].width = Inches(0.2)
@@ -187,9 +198,13 @@ def generate_tor_html(meta, narasi):
     <!DOCTYPE html>
     <html><head><meta charset="utf-8">
     <style>
-        @page {{ size: A4 portrait; margin: 20mm; }}
+        @page {{ 
+            size: A4 portrait; 
+            margin: 2cm 2.2cm 2cm 2.2cm; 
+        }}
         body {{ font-family: 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; text-align: justify; }}
-        .center {{ text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 20px; }}
+        .center {{ text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 2px; }}
+        .sub-center {{ text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 20px; }}
         table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
         td {{ padding: 2px 4px; vertical-align: top; }}
         .label {{ width: 35%; }}
@@ -202,6 +217,7 @@ def generate_tor_html(meta, narasi):
         .ttd-box {{ width: 250px; float: right; text-align: left; margin-top: 40px; }}
     </style></head><body>
     <div class="center">KERANGKA ACUAN KERJA/TERM OF REFERENCE</div>
+    <div class="sub-center">{str(meta['keg_title']).upper()}</div>
     
     <table>
         <tr><td class="label">Kementerian Negara/Lembaga</td><td class="titik">:</td><td class="value">(023) Kementerian Pendidikan, Kebudayaan, Riset dan Teknologi</td></tr>
@@ -333,10 +349,10 @@ def show_page():
             
             with st.form("form_edit_tor"):
                 edit_dh = st.text_area("A.1. Dasar Hukum", value=st.session_state.tor_json.get('dasar_hukum', ''), height=150)
-                edit_gu = st.text_area("A.2. Gambaran Umum", value=st.session_state.tor_json.get('gambaran_umum', ''), height=150)
-                edit_pm = st.text_area("B. Penerima Manfaat", value=st.session_state.tor_json.get('penerima_manfaat', ''), height=100)
-                edit_mp = st.text_area("C.1. Metode Pelaksanaan", value=st.session_state.tor_json.get('metode_pelaksanaan', ''), height=100)
-                edit_tw = st.text_area("C.2. Tahapan dan Waktu Pelaksanaan", value=st.session_state.tor_json.get('tahapan_waktu', ''), height=100)
+                edit_gu = st.text_area("A.2. Gambaran Umum", value=st.session_state.tor_json.get('gambaran_umum', ''), height=200)
+                edit_pm = st.text_area("B. Penerima Manfaat", value=st.session_state.tor_json.get('penerima_manfaat', ''), height=150)
+                edit_mp = st.text_area("C.1. Metode Pelaksanaan", value=st.session_state.tor_json.get('metode_pelaksanaan', ''), height=150)
+                edit_tw = st.text_area("C.2. Tahapan dan Waktu Pelaksanaan", value=st.session_state.tor_json.get('tahapan_waktu', ''), height=150)
                 edit_bd = st.text_area("D. Biaya Yang Diperlukan", value=st.session_state.tor_json.get('biaya_diperlukan', ''), height=100)
                 
                 if st.form_submit_button("Simpan Perubahan Draft", type="primary"):
