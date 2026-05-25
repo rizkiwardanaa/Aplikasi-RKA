@@ -78,17 +78,22 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
         """
         
         respons = model.generate_content(prompt)
-        teks_respons = respons.text.strip()
-        if teks_respons.startswith("```json"):
-            teks_respons = teks_respons[7:-3].strip()
-        elif teks_respons.startswith("```"):
-            teks_respons = teks_respons[3:-3].strip()
+        # Tambahan: Bersihkan karakter markdown jika AI memberikan respons berlebih
+        teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
             
-        data_json = json.loads(teks_respons)
-        return data_json
+        return json.loads(teks_respons)
+        
     except Exception as e:
-        st.error(f"[ERROR AI] Gagal memproses struktur. Detail: {e}")
-        return None
+        # Logika Cadangan: Jika 1.5-flash gagal, kita gunakan model yang paling "tua" tapi paling stabil
+        try:
+            st.warning("Model 1.5-flash gagal, mencoba model cadangan (gemini-pro)...")
+            model = genai.GenerativeModel('gemini-pro')
+            respons = model.generate_content(prompt)
+            teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
+            return json.loads(teks_respons)
+        except Exception as e2:
+            st.error(f"Gagal total menghubungi Gemini. Pastikan API Key benar. Error: {e2}")
+            return None
 
 # --- BUILDER MICROSOFT WORD (.DOCX) ---
 def build_docx(meta, narasi):
