@@ -383,7 +383,7 @@ def generate_rkakl_html(df_utama, df_detail, kegiatan_code_map):
                                 v_sat = get_vol_sat_combined(det['Vol_1'], det['Sat_1'], det['Vol_2'], det['Sat_2'])
                                 html += f"<tr><td></td><td style='padding-left:30px;'>- {det['Uraian']}</td><td class='center'>{v_sat}</td><td class='right'>{format_rupiah(det['Harga_Satuan'])}</td><td class='right'>{format_rupiah(det['Total_Biaya'])}</td><td></td></tr>"
 
-    html += f"<tr class='bold' style='background-color:#d9d9d9;'><td colspan='4' class='right'>TOTAL SELURUH ANGGARAN (RKAKL AKTIF)</td><td class='right'>Rp {format_rupiah(total_semua)}</td><td></td></tr></table></body></html>"
+    html += f"<tr class='bold' style='background-color:#d9d9d9;'><td colspan='4' class='right'>TOTAL SELURUH ANGGARAN</td><td class='right'>Rp {format_rupiah(total_semua)}</td><td></td></tr></table></body></html>"
     return html
 
 # =====================================================================
