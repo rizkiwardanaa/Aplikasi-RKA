@@ -17,26 +17,32 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 # =====================================================================
-# FUNGSI DATABASE KOMPILER PRODI
+# FUNGSI DATABASE KOMPILER PRODI (BUG WIPE DATA DIPERBAIKI)
 # =====================================================================
-@st.cache_data(ttl=300) # Cache 5 menit: Mengurangi lag saat loading dashboard
+@st.cache_data(ttl=300) 
 def load_data():
     try:
-        # Membaca dari PostgreSQL
-        conn = engine.connect()
-        df = pd.read_sql("SELECT * FROM usulan", conn)
-        conn.close()
+        with engine.connect() as conn:
+            df = pd.read_sql("SELECT * FROM usulan", conn)
         return df
-    except:
-        # Jika error (tabel belum ada), buat baru secara otomatis
-        df_kosong = pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
-        df_kosong.to_sql("usulan", engine, if_exists="replace", index=False)
-        return df_kosong
+    except Exception as e:
+        err_str = str(e).lower()
+        # HANYA buat tabel baru jika tabel benar-benar belum ada di database
+        if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
+            df_kosong = pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
+            with engine.connect() as conn:
+                df_kosong.to_sql("usulan", conn, if_exists="append", index=False)
+            return df_kosong
+        else:
+            # Jika hanya masalah koneksi/timeout, JANGAN ditimpa!
+            st.error(f"Koneksi database sedang sibuk/terputus. Error: {e}")
+            return pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
 
 def save_data(df):
     """Menyimpan data ke Cloud dan menghapus cache agar layar langsung ter-update"""
-    df.to_sql("usulan", engine, if_exists="replace", index=False)
-    load_data.clear() # Penting: Me-reset memori agar data baru langsung muncul
+    with engine.connect() as conn:
+        df.to_sql("usulan", conn, if_exists="replace", index=False)
+    load_data.clear() 
 
 def format_rupiah(x):
     try: return f"{float(x):,.0f}".replace(',', '.')
