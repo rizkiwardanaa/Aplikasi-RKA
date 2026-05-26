@@ -565,7 +565,7 @@ def show_page():
                 rab_satuan = col_u2.text_input("Satuan Ukur", value=def_sat, placeholder="Contoh: Layanan / Bulan")
                 
                 rab_tahun = col_u1.text_input("Tahun Anggaran", value=tahun_aktif, disabled=True)
-                list_versi = ["Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"]
+                list_versi = ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"]
                 idx_versi = list_versi.index(def_versi) if def_versi in list_versi else 0
                 rab_versi = col_u2.selectbox("Versi Anggaran (Periode)", list_versi, index=idx_versi)
 
@@ -690,7 +690,7 @@ def show_page():
             
             with st.expander(f"📋 Duplikasi Seluruh Kegiatan Versi '{pilih_v_arsip}' ke Versi Lain"):
                 st.write("Salin seluruh kegiatan pada versi ini ke versi baru sekaligus. Sangat cocok digunakan sebelum membuat revisi RKAKL.")
-                target_versi = st.selectbox("Pilih Target Versi Baru:", ["Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"])
+                target_versi = st.selectbox("Pilih Target Versi Baru:", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"])
                 if st.button(f"🚀 Salin Semua ke '{target_versi}'", type="primary"):
                     # Nonaktifkan versi lama di tahun yang sama
                     df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
