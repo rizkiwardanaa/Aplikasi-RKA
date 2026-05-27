@@ -463,7 +463,7 @@ def show_page():
     list_tahun = list(dict.fromkeys(list_tahun)) 
     tahun_aktif = st.sidebar.selectbox("📅 Pilih Tahun Anggaran Aktif:", list_tahun)
 
-    # ---> PERHATIKAN PENAMBAHAN TAB "🛠️ Simulasi Revisi" DI SINI <---
+    # ---> TAB WAR ROOM (REVISI) DITAMBAHKAN <---
     tab_master, tab_buat, tab_daftar, tab_rekap, tab_matrik, tab_rapat = st.tabs([
         "🗂️ Master", "📝 Buat / Edit RAB", "📂 Arsip & Versi", "📊 RKAKL Aktif", "⚖️ Matrik Perubahan", "🛠️ Rapat Revisi"
     ])
@@ -684,7 +684,6 @@ def show_page():
                         id_rab_baru = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         dt_pjb = df_m_pejabat.loc[pilih_pejabat]
                         
-                        # Set default active: if this version is currently the active version, keep it active
                         active_vs = df_rab_utama[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                         is_act = 1 if len(active_vs) == 0 or rab_versi in active_vs else 0
 
@@ -880,8 +879,8 @@ def show_page():
     # TAB 6: RAPAT & SIMULASI REVISI (WAR ROOM)
     # -----------------------------------------------------------------
     with tab_rapat:
-        st.subheader("🛠️ War Room: Rapat & Simulasi Revisi")
-        st.info("Edit rincian belanja secara live seperti di Excel. Perubahan otomatis menghitung sisa anggaran.")
+        st.subheader("🛠️ War Room: Mode Edit Berjenjang (Hierarchical Editor)")
+        st.info("Edit rincian belanja dengan nyaman berdasarkan hirarki RKAKL. Sisa dana akan terhitung otomatis di Panel atas.")
 
         df_thn_rapat = df_rab_utama[df_rab_utama['Tahun'] == tahun_aktif]
         if df_thn_rapat.empty:
@@ -892,21 +891,16 @@ def show_page():
 
             df_ur = df_thn_rapat[df_thn_rapat['Versi_RAB'] == versi_rapat]
             df_dr = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_ur['ID_RAB'])]
-
             pagu_awal = df_ur['Alokasi'].sum()
 
-            # Mapping ID ke Nama Kegiatan untuk dropdown tabel
             keg_to_id = {row['Kegiatan']: row['ID_RAB'] for _, row in df_ur.iterrows()}
             list_keg_rapat = list(keg_to_id.keys())
             
-            # Master Akun Belanja untuk dropdown tabel
             sumber_dana_rapat = df_ur['Sumber_Dana'].iloc[0] if not df_ur.empty else "BOPTN"
             list_akun_raw = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_dana_rapat]
             list_akun_rapat = (list_akun_raw['Account_Code'].astype(str) + " - " + list_akun_raw['Account_Name']).tolist() if not list_akun_raw.empty else ["-"]
 
-            # -----------------------------------------------------------
             # TOMBOL SUNTIK KEGIATAN MENDADAK
-            # -----------------------------------------------------------
             with st.expander("⚡ Suntik Kegiatan Mendadak (Buat Wadah Baru)"):
                 st.write("Tambahkan wadah kegiatan baru ke versi ini tanpa harus pindah tab.")
                 with st.form("form_suntik_kegiatan"):
@@ -920,7 +914,6 @@ def show_page():
                         if s_keg:
                             new_id = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                             dt_pjb = df_m_pejabat.iloc[0] if not df_m_pejabat.empty else {"Jabatan":"-", "Nama":"-", "NIP":"-"}
-                            
                             new_u = pd.DataFrame([{
                                 "ID_RAB": new_id, "Tanggal": datetime.now().strftime('%Y-%m-%d %H:%M'), "Tahun": tahun_aktif, "Tgl_Cetak": datetime.now().strftime('%Y-%m-%d'),
                                 "Sumber_Dana": sumber_dana_rapat, "KRO": s_kro, "RO": s_ro, "Komponen": s_komp, "Sub_Komponen": s_sub,
@@ -930,80 +923,119 @@ def show_page():
                             }])
                             df_rab_utama = pd.concat([df_rab_utama, new_u], ignore_index=True)
                             save_table(df_rab_utama, "rab_utama")
-                            st.success("Kegiatan berhasil disuntik! Silakan tambahkan rinciannya di tabel raksasa di bawah."); st.rerun()
+                            st.success("Kegiatan berhasil disuntik!"); st.rerun()
 
             st.markdown("---")
             
-            # -----------------------------------------------------------
-            # THE GIANT SPREADSHEET (DATA EDITOR)
-            # -----------------------------------------------------------
-            df_edit_view = pd.merge(df_dr, df_ur[['ID_RAB', 'Kegiatan']], on='ID_RAB', how='left')
-            if 'Kegiatan' not in df_edit_view.columns: df_edit_view['Kegiatan'] = ""
+            # PLACEHOLDER UNTUK PANEL HUD AGAR TAMPIL DI ATAS TAPI DIHITUNG TERAKHIR
+            hud_placeholder = st.empty()
+            st.markdown("### 📋 Lembar Kerja Berjenjang (Hierarchical Worksheet)")
+
+            # MENGURUTKAN DATA SESUAI HIRARKI KRO -> RO -> KOMPONEN -> KEGIATAN
+            df_ur_sorted = df_ur.sort_values(by=['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan'])
+            
+            all_valid_edits = []
+            pagu_live = 0
+            
+            c_kro, c_ro, c_komp, c_sub = "", "", "", ""
+
+            # LOOPING PEMBUATAN TABEL PER KEGIATAN DENGAN VISUAL ALA RKAKL
+            for _, row_keg in df_ur_sorted.iterrows():
+                # --- VISUAL HEADER HIERARCHY ---
+                if row_keg['KRO'] != c_kro:
+                    st.markdown(f"<div style='background-color:#d9e1f2; color:#000; padding:8px; font-weight:bold; margin-top:15px; border-radius:4px;'>🟦 KRO: {row_keg['KRO']}</div>", unsafe_allow_html=True)
+                    c_kro = row_keg['KRO']; c_ro = ""
+                if row_keg['RO'] != c_ro:
+                    st.markdown(f"<div style='background-color:#e9edf4; color:#000; padding:6px; font-weight:bold; margin-left:15px; border-left:3px solid #d9e1f2;'>💠 RO: {row_keg['RO']}</div>", unsafe_allow_html=True)
+                    c_ro = row_keg['RO']; c_komp = ""
+                if row_keg['Komponen'] != c_komp:
+                    st.markdown(f"<div style='background-color:#fff2cc; color:#000; padding:6px; font-weight:bold; margin-left:30px; border-left:3px solid #e9edf4;'>🟨 KOMPONEN: {row_keg['Komponen']}</div>", unsafe_allow_html=True)
+                    c_komp = row_keg['Komponen']; c_sub = ""
+                if row_keg['Sub_Komponen'] != c_sub and str(row_keg['Sub_Komponen']).strip() not in ["", "-"]:
+                    st.markdown(f"<div style='background-color:#fce4d6; color:#000; padding:6px; font-weight:bold; margin-left:45px; border-left:3px solid #fff2cc;'>🟧 SUB KOMP: {row_keg['Sub_Komponen']}</div>", unsafe_allow_html=True)
+                    c_sub = row_keg['Sub_Komponen']
+
+                keg_id = row_keg['ID_RAB']
+                keg_name = row_keg['Kegiatan']
+                keg_code = kegiatan_code_map.get(keg_name, "0000")
                 
-            df_edit_view = df_edit_view[['Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
-            df_edit_view['Vol_1'] = pd.to_numeric(df_edit_view['Vol_1']).fillna(1)
-            df_edit_view['Vol_2'] = pd.to_numeric(df_edit_view['Vol_2']).fillna(1)
-            df_edit_view['Harga_Satuan'] = pd.to_numeric(df_edit_view['Harga_Satuan']).fillna(0)
+                # SETUP DATAFRAME UNTUK KEGIATAN INI SAJA
+                df_det_keg = df_dr[df_dr['ID_RAB'] == keg_id].copy()
+                df_det_keg['Target_Kegiatan'] = keg_name 
+                
+                df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
+                if df_edit_view.empty:
+                    df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
 
-            edited_df = st.data_editor(
-                df_edit_view,
-                num_rows="dynamic",
-                use_container_width=True,
-                height=500,
-                column_config={
-                    "Kegiatan": st.column_config.SelectboxColumn("Kegiatan", options=list_keg_rapat, required=True),
-                    "Akun_Belanja": st.column_config.SelectboxColumn("Akun Belanja", options=list_akun_rapat, required=True),
-                    "Uraian": st.column_config.TextColumn("Uraian Detail Belanja", required=True),
-                    "Vol_1": st.column_config.NumberColumn("Vol 1", min_value=0),
-                    "Sat_1": st.column_config.TextColumn("Sat 1"),
-                    "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0),
-                    "Sat_2": st.column_config.TextColumn("Sat 2"),
-                    "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0),
-                }
-            )
+                # EXPANDER UNTUK EDITOR (WARNA HIJAU SEPERTI KEGIATAN DI RKAKL)
+                with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()}", expanded=True):
+                    edited_keg = st.data_editor(
+                        df_edit_view,
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        key=f"ed_{keg_id}",
+                        column_config={
+                            "Target_Kegiatan": st.column_config.SelectboxColumn("Pindah Ke Kegiatan", options=list_keg_rapat, required=True),
+                            "Akun_Belanja": st.column_config.SelectboxColumn("Akun Belanja", options=list_akun_rapat, required=True),
+                            "Uraian": st.column_config.TextColumn("Uraian Detail Belanja", required=True),
+                            "Vol_1": st.column_config.NumberColumn("Vol 1", min_value=0),
+                            "Sat_1": st.column_config.TextColumn("Sat 1"),
+                            "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0),
+                            "Sat_2": st.column_config.TextColumn("Sat 2"),
+                            "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0),
+                        }
+                    )
+                    
+                    # HITUNG LIVE PAGU PER KEGIATAN
+                    edited_keg['Vol_1'] = pd.to_numeric(edited_keg['Vol_1']).fillna(1)
+                    edited_keg['Vol_2'] = pd.to_numeric(edited_keg['Vol_2']).fillna(1)
+                    edited_keg.loc[edited_keg['Vol_2'] == 0, 'Vol_2'] = 1 
+                    edited_keg['Harga_Satuan'] = pd.to_numeric(edited_keg['Harga_Satuan']).fillna(0)
+                    
+                    keg_total = (edited_keg['Vol_1'] * edited_keg['Vol_2'] * edited_keg['Harga_Satuan']).sum()
+                    pagu_live += keg_total
+                    
+                    st.caption(f"**Total Anggaran Kegiatan Ini: Rp {format_rupiah(keg_total)}**")
+                    all_valid_edits.append(edited_keg)
+
+            # RENDER HUD DI PLACEHOLDER PALING ATAS
+            with hud_placeholder.container():
+                st.markdown("### 🎛️ Panel Indikator Anggaran (Real-Time)")
+                col_h1, col_h2, col_h3 = st.columns(3)
+                col_h1.metric("Pagu Awal Versi", f"Rp {format_rupiah(pagu_awal)}")
+                col_h2.metric("Total Draf Saat Ini", f"Rp {format_rupiah(pagu_live)}")
+                
+                selisih_dana = pagu_awal - pagu_live
+                if selisih_dana >= 0:
+                    col_h3.metric("Keranjang Sisa Dana", f"Rp {format_rupiah(selisih_dana)}")
+                else:
+                    col_h3.metric("🚨 DEFISIT (OVER BUDGET)", f"Rp {format_rupiah(selisih_dana)}")
+                st.markdown("<br>", unsafe_allow_html=True)
 
             # -----------------------------------------------------------
-            # LIVE HUD CALCULATOR
+            # COMMIT BUTTON (KETOK PALU)
             # -----------------------------------------------------------
-            edited_df['Vol_1'] = pd.to_numeric(edited_df['Vol_1']).fillna(1)
-            edited_df['Vol_2'] = pd.to_numeric(edited_df['Vol_2']).fillna(1)
-            edited_df.loc[edited_df['Vol_2'] == 0, 'Vol_2'] = 1 
-            edited_df['Harga_Satuan'] = pd.to_numeric(edited_df['Harga_Satuan']).fillna(0)
-            
-            pagu_live = (edited_df['Vol_1'] * edited_df['Vol_2'] * edited_df['Harga_Satuan']).sum()
-            selisih_dana = pagu_awal - pagu_live
-
-            st.markdown("### 🎛️ Panel Indikator Anggaran (Real-Time)")
-            col_h1, col_h2, col_h3 = st.columns(3)
-            col_h1.metric("Pagu Awal Versi", f"Rp {format_rupiah(pagu_awal)}")
-            col_h2.metric("Total Draf Saat Ini", f"Rp {format_rupiah(pagu_live)}")
-            
-            if selisih_dana >= 0:
-                col_h3.metric("Keranjang Sisa Dana", f"Rp {format_rupiah(selisih_dana)}")
-            else:
-                col_h3.metric("🚨 DEFISIT (OVER BUDGET)", f"Rp {format_rupiah(selisih_dana)}")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # -----------------------------------------------------------
-            # COMMIT BUTTON
-            # -----------------------------------------------------------
+            st.markdown("---")
             if st.button("💾 Ketok Palu: Simpan Hasil Revisi ke Database", type="primary", use_container_width=True):
-                valid_edits = edited_df[edited_df['Uraian'].str.strip() != ""].copy()
-                valid_edits['ID_RAB'] = valid_edits['Kegiatan'].map(keg_to_id)
+                edited_df_all = pd.concat(all_valid_edits)
+                valid_edits = edited_df_all[edited_df_all['Uraian'].str.strip() != ""].copy()
+                
+                # Pemetaan mutasi kegiatan (Pindah Rumah)
+                valid_edits['ID_RAB'] = valid_edits['Target_Kegiatan'].map(keg_to_id)
                 valid_edits = valid_edits.dropna(subset=['ID_RAB'])
                 valid_edits['Total_Biaya'] = valid_edits['Vol_1'] * valid_edits['Vol_2'] * valid_edits['Harga_Satuan']
                 
                 # 1. Hapus detail lama yang ada di versi ini
                 df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(keg_to_id.values())]
                 
-                # 2. Masukkan detail yang baru dari tabel raksasa
+                # 2. Masukkan detail yang baru
                 new_detail = valid_edits[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
                 df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
                 
-                # 3. Update nominal 'Alokasi' di tabel utama sesuai rincian baru
+                # 3. Update nominal 'Alokasi' di tabel utama
                 new_alokasi = valid_edits.groupby('ID_RAB')['Total_Biaya'].sum()
-                for id_r, tot_b in new_alokasi.items():
+                for id_r in keg_to_id.values():
+                    tot_b = new_alokasi.get(id_r, 0)
                     df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Alokasi'] = tot_b
                     
                 save_table(df_rab_detail, "rab_detail")
