@@ -6,9 +6,9 @@ from sqlalchemy import create_engine
 import io
 
 try:
-    import PyPDF2
+    import pdfplumber
 except ImportError:
-    st.error("⚠️ Pustaka PyPDF2 belum terinstal. Silakan tambahkan 'PyPDF2' ke dalam file requirements.txt di GitHub Anda.")
+    st.error("⚠️ Pustaka pdfplumber belum terinstal. Pastikan file requirements.txt sudah di-update dan tunggu server Streamlit selesai proses 'Rebooting'.")
 
 # --- KONEKSI DATABASE ---
 DB_URL = st.secrets["DB_URL"]
@@ -25,12 +25,16 @@ def save_table(df, table_name):
         df.to_sql(table_name, conn, if_exists="replace", index=False)
     st.cache_data.clear()
 
-# --- MESIN PISAU PYTHON (SUPER PARSER) ---
+# --- MESIN PISAU PYTHON (PDFPLUMBER SUPER PARSER) ---
 def parse_pdf_rkakl(file_bytes):
-    reader = PyPDF2.PdfReader(file_bytes)
     text = ""
-    for page in reader.pages:
-        text += page.extract_text() + "\n"
+    # pdfplumber membuka file byte dan menjaga struktur jarak (spasi) antar kolom
+    with pdfplumber.open(file_bytes) as pdf:
+        for page in pdf.pages:
+            # x_tolerance=2 memastikan teks yang terpisah kolom akan diberi spasi
+            page_text = page.extract_text(x_tolerance=2)
+            if page_text:
+                text += page_text + "\n"
 
     lines = text.split('\n')
     extracted_data = []
@@ -142,7 +146,7 @@ def parse_pdf_rkakl(file_bytes):
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. Sistem akan membaca, memecah, dan menyusunnya menjadi database RAB.")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. Sistem menggunakan pdfplumber untuk memecah dan menyusunnya menjadi database RAB.")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -160,7 +164,7 @@ def show_page():
         
         if st.button("🚀 Ekstrak Dokumen Sekarang", type="primary"):
             if file_pdf:
-                with st.spinner("Menganalisis hirarki dan menjahit teks..."):
+                with st.spinner("Menganalisis hirarki dan menjahit teks dengan pdfplumber..."):
                     df_hasil, log_debug = parse_pdf_rkakl(file_pdf)
                     st.session_state.ekstrak_log = log_debug
                     
