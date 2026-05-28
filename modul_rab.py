@@ -250,8 +250,8 @@ def export_pdf_rab(df_header, df_items, orientasi, kegiatan_code_map):
 # =====================================================================
 # GENERATOR MATRIK PERUBAHAN & RKAKL
 # =====================================================================
-def generate_matrik_html(df_matrik, v_sebelum, v_menjadi, keg_map, tahun, tgl_cetak, nama_dekan, nip_dekan):
-    if df_matrik.empty: return "<h3>Tidak ada data untuk dibandingkan pada versi tersebut.</h3>"
+def generate_matrik_html(df_matrik, v_sebelum, v_menjadi, keg_map, tahun, tgl_cetak, nama_dekan, nip_dekan, sumber_dana):
+    if df_matrik.empty: return "<h3>Tidak ada data untuk dibandingkan pada versi dan sumber dana tersebut.</h3>"
     
     tot_m_global_atas = df_matrik['Tot_m'].sum() if not df_matrik.empty else 0
     
@@ -282,17 +282,17 @@ def generate_matrik_html(df_matrik, v_sebelum, v_menjadi, keg_map, tahun, tgl_ce
         <tr><td class="bold">PROVINSI</td><td>:</td><td>KALIMANTAN TIMUR</td></tr>
         <tr><td class="bold">KOTA</td><td>:</td><td>KOTA SAMARINDA</td></tr>
         <tr><td class="bold">UNIT KERJA</td><td>:</td><td>Fakultas Ilmu Budaya</td></tr>
+        <tr><td class="bold">SUMBER DANA</td><td>:</td><td class="bold">{sumber_dana}</td></tr>
         <tr><td class="bold">ALOKASI MENJADI</td><td>:</td><td class="bold">Rp. {format_rupiah(tot_m_global_atas)}</td></tr>
     </table>
     
     <table class="tabel-utama">
         <tr>
             <th width="7%" rowspan="2">KODE</th>
-            <th width="28%" rowspan="2">URAIAN PROGRAM / KEGIATAN /<br>KOMPONEN / AKUN / DETAIL</th>
+            <th width="30%" rowspan="2">URAIAN PROGRAM / KEGIATAN /<br>KOMPONEN / AKUN / DETAIL</th>
             <th width="20%" colspan="3">PAGU SEMULA ({v_sebelum})</th>
             <th width="20%" colspan="3">PAGU MENJADI ({v_menjadi})</th>
-            <th width="10%" rowspan="2">BERTAMBAH /<br>(BERKURANG)</th>
-            <th width="5%" rowspan="2">DANA</th>
+            <th width="13%" rowspan="2">BERTAMBAH /<br>(BERKURANG)</th>
         </tr>
         <tr>
             <th>VOL</th><th>HARGA</th><th>JUMLAH</th>
@@ -303,45 +303,44 @@ def generate_matrik_html(df_matrik, v_sebelum, v_menjadi, keg_map, tahun, tgl_ce
     
     for kro, g_kro in df_matrik.groupby('KRO'):
         k_kro, n_kro = split_kode(kro)
-        sd = g_kro['Sumber_Dana'].iloc[0]
         t_s = g_kro['Tot_s'].sum(); t_m = g_kro['Tot_m'].sum(); selisih = g_kro['Selisih'].sum()
         tot_s_global += t_s; tot_m_global += t_m; tot_sel_global += selisih
-        html += f"<tr class='kro-row bold'><td>{k_kro}</td><td>{n_kro}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td><td class='center'>{sd}</td></tr>"
+        html += f"<tr class='kro-row bold'><td>{k_kro}</td><td>{n_kro}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td></tr>"
         
         for ro, g_ro in g_kro.groupby('RO'):
             k_ro, n_ro = split_kode(ro)
             t_s = g_ro['Tot_s'].sum(); t_m = g_ro['Tot_m'].sum(); selisih = g_ro['Selisih'].sum()
-            html += f"<tr class='ro-row bold'><td>{k_ro}</td><td>{n_ro}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td><td></td></tr>"
+            html += f"<tr class='ro-row bold'><td>{k_ro}</td><td>{n_ro}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td></tr>"
             
             for komp, g_komp in g_ro.groupby('Komponen'):
                 k_komp, n_komp = split_kode(komp)
                 t_s = g_komp['Tot_s'].sum(); t_m = g_komp['Tot_m'].sum(); selisih = g_komp['Selisih'].sum()
-                html += f"<tr class='komp-row bold'><td>{k_komp}</td><td>{n_komp}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td><td></td></tr>"
+                html += f"<tr class='komp-row bold'><td>{k_komp}</td><td>{n_komp}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td></tr>"
                 
                 for sub, g_sub in g_komp.groupby('Sub_Komponen'):
                     if sub and sub != "-":
                         k_sub, n_sub = split_kode(sub)
                         t_s = g_sub['Tot_s'].sum(); t_m = g_sub['Tot_m'].sum(); selisih = g_sub['Selisih'].sum()
-                        html += f"<tr class='sub-row bold'><td>{k_sub}</td><td>{n_sub}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td><td></td></tr>"
+                        html += f"<tr class='sub-row bold'><td>{k_sub}</td><td>{n_sub}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td></tr>"
                     
                     for keg, g_keg in g_sub.groupby('Kegiatan'):
                         k_keg = keg_map.get(keg, "0000"); n_keg = keg.title()
                         t_s = g_keg['Tot_s'].sum(); t_m = g_keg['Tot_m'].sum(); selisih = g_keg['Selisih'].sum()
-                        html += f"<tr class='keg-row bold'><td>{k_keg}</td><td style='padding-left:10px;'>{n_keg}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td><td></td></tr>"
+                        html += f"<tr class='keg-row bold'><td>{k_keg}</td><td style='padding-left:10px;'>{n_keg}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td></tr>"
                         
                         for akun, g_akun in g_keg.groupby('Akun_Belanja'):
                             k_ak, n_ak = split_kode(akun)
                             t_s = g_akun['Tot_s'].sum(); t_m = g_akun['Tot_m'].sum(); selisih = g_akun['Selisih'].sum()
-                            html += f"<tr class='bold'><td>{k_ak}</td><td style='padding-left:20px;'>{n_ak}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td><td></td></tr>"
+                            html += f"<tr class='bold'><td>{k_ak}</td><td style='padding-left:20px;'>{n_ak}</td><td></td><td></td><td class='right'>{format_rupiah(t_s)}</td><td></td><td></td><td class='right'>{format_rupiah(t_m)}</td><td class='right'>{format_rupiah(selisih)}</td></tr>"
                             
                             for _, det in g_akun.iterrows():
                                 v_s = get_vol_sat_combined(det['V1_s'], det['S1_s'], det['V2_s'], det['S2_s']) if det['Tot_s'] > 0 else "-"
                                 v_m = get_vol_sat_combined(det['V1_m'], det['S1_m'], det['V2_m'], det['S2_m']) if det['Tot_m'] > 0 else "-"
                                 h_s = format_rupiah(det['Hrg_s']) if det['Tot_s'] > 0 else "-"
                                 h_m = format_rupiah(det['Hrg_m']) if det['Tot_m'] > 0 else "-"
-                                html += f"<tr><td></td><td style='padding-left:30px;'>- {det['Uraian']}</td><td class='center'>{v_s}</td><td class='right'>{h_s}</td><td class='right'>{format_rupiah(det['Tot_s'])}</td><td class='center'>{v_m}</td><td class='right'>{h_m}</td><td class='right'>{format_rupiah(det['Tot_m'])}</td><td class='right'>{format_rupiah(det['Selisih'])}</td><td></td></tr>"
+                                html += f"<tr><td></td><td style='padding-left:30px;'>- {det['Uraian']}</td><td class='center'>{v_s}</td><td class='right'>{h_s}</td><td class='right'>{format_rupiah(det['Tot_s'])}</td><td class='center'>{v_m}</td><td class='right'>{h_m}</td><td class='right'>{format_rupiah(det['Tot_m'])}</td><td class='right'>{format_rupiah(det['Selisih'])}</td></tr>"
 
-    html += f"""<tr class='bold' style='background-color:#d9d9d9;'><td colspan='2' class='right'>TOTAL GLOBAL</td><td></td><td></td><td class='right'>Rp {format_rupiah(tot_s_global)}</td><td></td><td></td><td class='right'>Rp {format_rupiah(tot_m_global)}</td><td class='right'>Rp {format_rupiah(tot_sel_global)}</td><td></td></tr></table>
+    html += f"""<tr class='bold' style='background-color:#d9d9d9;'><td colspan='2' class='right'>TOTAL GLOBAL</td><td></td><td></td><td class='right'>Rp {format_rupiah(tot_s_global)}</td><td></td><td></td><td class='right'>Rp {format_rupiah(tot_m_global)}</td><td class='right'>Rp {format_rupiah(tot_sel_global)}</td></tr></table>
     <div class="ttd-box">
         Samarinda, {tgl_cetak}<br>Dekan<br><br><br><br><br>
         <b><u>{nama_dekan}</u></b><br>NIP. {nip_dekan}
@@ -349,8 +348,8 @@ def generate_matrik_html(df_matrik, v_sebelum, v_menjadi, keg_map, tahun, tgl_ce
     </body></html>"""
     return html
 
-def generate_rkakl_html(df_utama, df_detail, kegiatan_code_map, tahun, tgl_cetak, nama_dekan, nip_dekan):
-    if df_utama.empty: return "<h3>Belum ada data RAB aktif.</h3>"
+def generate_rkakl_html(df_utama, df_detail, kegiatan_code_map, tahun, tgl_cetak, nama_dekan, nip_dekan, sumber_dana):
+    if df_utama.empty: return f"<h3>Belum ada data RAB aktif untuk sumber dana {sumber_dana}.</h3>"
     
     total_semua = df_detail[df_detail['ID_RAB'].isin(df_utama['ID_RAB'])]['Total_Biaya'].sum()
     
@@ -381,54 +380,54 @@ def generate_rkakl_html(df_utama, df_detail, kegiatan_code_map, tahun, tgl_cetak
         <tr><td class="bold">PROVINSI</td><td>:</td><td>KALIMANTAN TIMUR</td></tr>
         <tr><td class="bold">KOTA</td><td>:</td><td>KOTA SAMARINDA</td></tr>
         <tr><td class="bold">UNIT KERJA</td><td>:</td><td>Fakultas Ilmu Budaya</td></tr>
+        <tr><td class="bold">SUMBER DANA</td><td>:</td><td class="bold">{sumber_dana}</td></tr>
         <tr><td class="bold">ALOKASI</td><td>:</td><td class="bold">Rp. {format_rupiah(total_semua)}</td></tr>
     </table>
     
     <table class="tabel-utama">
         <tr>
             <th width="10%">KODE</th>
-            <th width="40%">PROGRAM / KEGIATAN / OUTPUT / SUBOUTPUT /<br>KOMPONEN / SUBKOMP / JUDUL KEGIATAN / AKUN / DETIL</th>
-            <th width="12%">VOL</th><th width="14%">HARGA SATUAN</th><th width="14%">JUMLAH BIAYA</th><th width="10%">DANA</th>
+            <th width="45%">PROGRAM / KEGIATAN / OUTPUT / SUBOUTPUT /<br>KOMPONEN / SUBKOMP / JUDUL KEGIATAN / AKUN / DETIL</th>
+            <th width="15%">VOL</th><th width="15%">HARGA SATUAN</th><th width="15%">JUMLAH BIAYA</th>
         </tr>
     """
     
     for kro, g_kro in df_utama.groupby('KRO'):
         k_kro, n_kro = split_kode(kro)
-        s_dana = g_kro['Sumber_Dana'].iloc[0]
         ids_kro = g_kro['ID_RAB'].tolist()
         tot_kro = df_detail[df_detail['ID_RAB'].isin(ids_kro)]['Total_Biaya'].sum()
-        html += f"<tr class='kro-row bold'><td>{k_kro}</td><td>{n_kro}</td><td></td><td></td><td class='right'>{format_rupiah(tot_kro)}</td><td class='center'>{s_dana}</td></tr>"
+        html += f"<tr class='kro-row bold'><td>{k_kro}</td><td>{n_kro}</td><td></td><td></td><td class='right'>{format_rupiah(tot_kro)}</td></tr>"
         for ro, g_ro in g_kro.groupby('RO'):
             k_ro, n_ro = split_kode(ro)
             ids_ro = g_ro['ID_RAB'].tolist()
             tot_ro = df_detail[df_detail['ID_RAB'].isin(ids_ro)]['Total_Biaya'].sum()
-            html += f"<tr class='ro-row bold'><td>{k_ro}</td><td>{n_ro}</td><td></td><td></td><td class='right'>{format_rupiah(tot_ro)}</td><td></td></tr>"
+            html += f"<tr class='ro-row bold'><td>{k_ro}</td><td>{n_ro}</td><td></td><td></td><td class='right'>{format_rupiah(tot_ro)}</td></tr>"
             for komp, g_komp in g_ro.groupby('Komponen'):
                 k_komp, n_komp = split_kode(komp)
                 ids_komp = g_komp['ID_RAB'].tolist()
                 tot_komp = df_detail[df_detail['ID_RAB'].isin(ids_komp)]['Total_Biaya'].sum()
-                html += f"<tr class='komp-row bold'><td>{k_komp}</td><td>{n_komp}</td><td></td><td></td><td class='right'>{format_rupiah(tot_komp)}</td><td></td></tr>"
+                html += f"<tr class='komp-row bold'><td>{k_komp}</td><td>{n_komp}</td><td></td><td></td><td class='right'>{format_rupiah(tot_komp)}</td></tr>"
                 for sub, g_sub in g_komp.groupby('Sub_Komponen'):
                     if sub and sub != "-":
                         k_sub, n_sub = split_kode(sub)
                         ids_sub = g_sub['ID_RAB'].tolist()
                         tot_sub = df_detail[df_detail['ID_RAB'].isin(ids_sub)]['Total_Biaya'].sum()
-                        html += f"<tr class='sub-row bold'><td>{k_sub}</td><td>{n_sub}</td><td></td><td></td><td class='right'>{format_rupiah(tot_sub)}</td><td></td></tr>"
+                        html += f"<tr class='sub-row bold'><td>{k_sub}</td><td>{n_sub}</td><td></td><td></td><td class='right'>{format_rupiah(tot_sub)}</td></tr>"
                     for keg, g_keg in g_sub.groupby('Kegiatan'):
                         keg_code = kegiatan_code_map.get(keg, "0000"); keg_title = keg.title() 
                         ids_keg = g_keg['ID_RAB'].tolist()
                         tot_keg = df_detail[df_detail['ID_RAB'].isin(ids_keg)]['Total_Biaya'].sum()
-                        html += f"<tr class='keg-row bold'><td>{keg_code}</td><td style='padding-left:10px;'>{keg_title}</td><td></td><td></td><td class='right'>{format_rupiah(tot_keg)}</td><td></td></tr>"
+                        html += f"<tr class='keg-row bold'><td>{keg_code}</td><td style='padding-left:10px;'>{keg_title}</td><td></td><td></td><td class='right'>{format_rupiah(tot_keg)}</td></tr>"
                         det_keg = df_detail[df_detail['ID_RAB'].isin(ids_keg)]
                         for akun, g_akun in det_keg.groupby('Akun_Belanja'):
                             k_akun, n_akun = split_kode(akun)
                             tot_akun = g_akun['Total_Biaya'].sum()
-                            html += f"<tr class='bold'><td>{k_akun}</td><td style='padding-left:20px;'>{n_akun}</td><td></td><td></td><td class='right'>{format_rupiah(tot_akun)}</td><td></td></tr>"
+                            html += f"<tr class='bold'><td>{k_akun}</td><td style='padding-left:20px;'>{n_akun}</td><td></td><td></td><td class='right'>{format_rupiah(tot_akun)}</td></tr>"
                             for _, det in g_akun.iterrows():
                                 v_sat = get_vol_sat_combined(det['Vol_1'], det['Sat_1'], det['Vol_2'], det['Sat_2'])
-                                html += f"<tr><td></td><td style='padding-left:30px;'>- {det['Uraian']}</td><td class='center'>{v_sat}</td><td class='right'>{format_rupiah(det['Harga_Satuan'])}</td><td class='right'>{format_rupiah(det['Total_Biaya'])}</td><td></td></tr>"
+                                html += f"<tr><td></td><td style='padding-left:30px;'>- {det['Uraian']}</td><td class='center'>{v_sat}</td><td class='right'>{format_rupiah(det['Harga_Satuan'])}</td><td class='right'>{format_rupiah(det['Total_Biaya'])}</td></tr>"
 
-    html += f"""<tr class='bold' style='background-color:#d9d9d9;'><td colspan='4' class='right'>TOTAL SELURUH ANGGARAN (RKAKL AKTIF)</td><td class='right'>Rp {format_rupiah(total_semua)}</td><td></td></tr></table>
+    html += f"""<tr class='bold' style='background-color:#d9d9d9;'><td colspan='4' class='right'>TOTAL SELURUH ANGGARAN (RKAKL {sumber_dana})</td><td class='right'>Rp {format_rupiah(total_semua)}</td></tr></table>
     <div class="ttd-box">
         Samarinda, {tgl_cetak}<br>Dekan<br><br><br><br><br>
         <b><u>{nama_dekan}</u></b><br>NIP. {nip_dekan}
@@ -699,7 +698,7 @@ def show_page():
                         
                         valid_detail["ID_RAB"] = id_rab_baru
                         valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
-                        valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
+                        valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat 2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
                         
                         df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
                         save_table(df_rab_detail, "rab_detail")
@@ -716,14 +715,17 @@ def show_page():
             st.info(f"Belum ada dokumen RAB untuk Tahun {tahun_aktif}.")
         else:
             st.subheader("📂 Arsip & Manajemen Versi")
+            
+            # --- PENAMBAHAN FILTER SUMBER DANA ---
             col_a1, col_a2 = st.columns(2)
             versi_list_aktif = sorted(df_utama_thn['Versi_RAB'].unique())
             pilih_v_arsip = col_a1.selectbox("1. Pilih Versi (Untuk Difilter):", versi_list_aktif)
+            sumber_dana_arsip = col_a2.radio("2. Pilih Sumber Dana:", ["BOPTN", "PNBP"], key="sd_arsip", horizontal=True)
             
-            df_v_terpilih = df_utama_thn[df_utama_thn['Versi_RAB'] == pilih_v_arsip]
+            df_v_terpilih = df_utama_thn[(df_utama_thn['Versi_RAB'] == pilih_v_arsip) & (df_utama_thn['Sumber_Dana'] == sumber_dana_arsip)]
             
             # PANEL STATUS VERSI GLOBAL
-            is_v_active = 1 if 1 in df_v_terpilih['Is_Active'].values else 0
+            is_v_active = 1 if 1 in df_utama_thn[df_utama_thn['Versi_RAB'] == pilih_v_arsip]['Is_Active'].values else 0
             if is_v_active == 1:
                 st.success(f"✅ **STATUS VERSI: AKTIF (FINAL ACUAN)**. Seluruh kegiatan pada versi '{pilih_v_arsip}' ditarik ke dalam Rekapitulasi Global RKAKL.")
             else:
@@ -738,14 +740,15 @@ def show_page():
             st.markdown("---")
 
             keg_list_aktif = sorted(df_v_terpilih['Kegiatan'].unique())
-            pilih_keg_arsip = col_a2.selectbox(f"2. Pilih Kegiatan (Dalam Versi {pilih_v_arsip}):", keg_list_aktif, format_func=lambda x: x.title())
+            pilih_keg_arsip = st.selectbox(f"3. Pilih Kegiatan (Dalam Versi {pilih_v_arsip} - {sumber_dana_arsip}):", keg_list_aktif, format_func=lambda x: x.title())
             
             with st.expander(f"📋 Duplikasi Seluruh Kegiatan Versi '{pilih_v_arsip}' ke Versi Lain"):
                 st.write("Salin seluruh kegiatan pada versi ini ke versi baru sekaligus. Sangat cocok digunakan sebelum membuat revisi RKAKL.")
                 target_versi = st.selectbox("Pilih Target Versi Baru:", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"])
                 if st.button(f"🚀 Salin Semua ke '{target_versi}'", type="primary"):
                     df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
-                    for i, (_, row_keg) in enumerate(df_v_terpilih.iterrows()):
+                    df_v_asal = df_utama_thn[df_utama_thn['Versi_RAB'] == pilih_v_arsip] # Salin semua sumber dana
+                    for i, (_, row_keg) in enumerate(df_v_asal.iterrows()):
                         new_row = row_keg.copy()
                         new_id = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{i}"
                         new_row['ID_RAB'] = new_id
@@ -785,9 +788,9 @@ def show_page():
                 st.markdown("#### 🖨️ Cetak Dokumen Satuan")
                 col_x1, col_x2, col_x3 = st.columns([1, 1, 2])
                 with col_x1:
-                    st.download_button("📥 Download Excel Resmi", data=export_excel_rab(head_terpilih, detail_terpilih, kegiatan_code_map), file_name=f"RAB_{pilih_keg_arsip}_{pilih_v_arsip}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                    st.download_button("📥 Download Excel Resmi", data=export_excel_rab(head_terpilih, detail_terpilih, kegiatan_code_map), file_name=f"RAB_{s_dana}_{pilih_keg_arsip}_{pilih_v_arsip}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                 with col_x2:
-                    st.download_button("📑 Download PDF (Web)", data=export_pdf_rab(head_terpilih, detail_terpilih, "Portrait", kegiatan_code_map).encode('utf-8'), file_name=f"RAB_{pilih_keg_arsip}_{pilih_v_arsip}.html", mime="text/html", use_container_width=True)
+                    st.download_button("📑 Download PDF (Web)", data=export_pdf_rab(head_terpilih, detail_terpilih, "Portrait", kegiatan_code_map).encode('utf-8'), file_name=f"RAB_{s_dana}_{pilih_keg_arsip}_{pilih_v_arsip}.html", mime="text/html", use_container_width=True)
                 with col_x3:
                     if st.button("🗑️ Hapus Dokumen Ini", type="secondary", use_container_width=True):
                         df_rab_utama = df_rab_utama[df_rab_utama["ID_RAB"] != id_rab_aktif]
@@ -805,16 +808,20 @@ def show_page():
         tgl_cetak_rkakl = col_r1.text_input("Tanggal Cetak Dokumen RKAKL", value=tgl_skrg, key="tgl_rkakl")
         dekan_rkakl = col_r2.text_input("Nama Dekan", value="Prof. Dr. M. Bahri Arifin, M.Hum.", key="dek_rkakl")
         nip_rkakl = col_r3.text_input("NIP Dekan", value="196211271989031004", key="nip_rkakl")
+        
+        # --- PENAMBAHAN FILTER SUMBER DANA ---
+        sumber_dana_rkakl = st.radio("Pilih Sumber Dana yang Akan Ditampilkan/Dicetak:", ["BOPTN", "PNBP"], key="sd_rkakl", horizontal=True)
         st.markdown("---")
         
-        df_aktif = df_rab_utama[(df_rab_utama['Is_Active'] == 1) & (df_rab_utama['Tahun'] == tahun_aktif)]
+        df_aktif = df_rab_utama[(df_rab_utama['Is_Active'] == 1) & (df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Sumber_Dana'] == sumber_dana_rkakl)]
+        
         if df_aktif.empty:
-            st.info(f"Belum ada RAB aktif untuk tahun {tahun_aktif}.")
+            st.info(f"Belum ada RAB aktif untuk sumber dana {sumber_dana_rkakl} tahun {tahun_aktif}.")
         else:
             df_det_aktif = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_aktif['ID_RAB'])]
-            html_rkakl = generate_rkakl_html(df_aktif, df_det_aktif, kegiatan_code_map, tahun_aktif, tgl_cetak_rkakl, dekan_rkakl, nip_rkakl)
+            html_rkakl = generate_rkakl_html(df_aktif, df_det_aktif, kegiatan_code_map, tahun_aktif, tgl_cetak_rkakl, dekan_rkakl, nip_rkakl, sumber_dana_rkakl)
             with st.container(border=True): components.html(html_rkakl, height=600, scrolling=True)
-            st.download_button("📥 Cetak Buku Rekap RKAKL (.html)", data=html_rkakl.encode('utf-8'), file_name=f"RKAKL_FIB_{tahun_aktif}_{datetime.now().strftime('%Y%m%d')}.html", mime="text/html", type="primary")
+            st.download_button("📥 Cetak Buku Rekap RKAKL (.html)", data=html_rkakl.encode('utf-8'), file_name=f"RKAKL_{sumber_dana_rkakl}_FIB_{tahun_aktif}_{datetime.now().strftime('%Y%m%d')}.html", mime="text/html", type="primary")
 
     # -----------------------------------------------------------------
     # TAB 5: MATRIK PERUBAHAN
@@ -840,12 +847,15 @@ def show_page():
             pilih_v1 = col_v1.selectbox("Pilih Versi Semula (Sebelum):", list_all_versions, index=list_all_versions.index(v1_def) if v1_def else 0)
             pilih_v2 = col_v2.selectbox("Pilih Versi Menjadi (Sesudah):", list_all_versions, index=list_all_versions.index(v2_def) if v2_def else 0)
             
+            # --- PENAMBAHAN FILTER SUMBER DANA ---
+            sumber_dana_matrik = st.radio("Pilih Sumber Dana Matrik:", ["BOPTN", "PNBP"], key="sd_matrik", horizontal=True)
+            
             if st.button("🔍 Generate Matrik Perbandingan", type="primary"):
-                df_u1 = df_thn[df_thn['Versi_RAB'] == pilih_v1]
+                df_u1 = df_thn[(df_thn['Versi_RAB'] == pilih_v1) & (df_thn['Sumber_Dana'] == sumber_dana_matrik)]
                 df_d1 = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_u1['ID_RAB'])]
                 df_m1 = pd.merge(df_d1, df_u1, on='ID_RAB') if not df_u1.empty else pd.DataFrame()
                 
-                df_u2 = df_thn[df_thn['Versi_RAB'] == pilih_v2]
+                df_u2 = df_thn[(df_thn['Versi_RAB'] == pilih_v2) & (df_thn['Sumber_Dana'] == sumber_dana_matrik)]
                 df_d2 = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_u2['ID_RAB'])]
                 df_m2 = pd.merge(df_d2, df_u2, on='ID_RAB') if not df_u2.empty else pd.DataFrame()
                 
@@ -869,11 +879,11 @@ def show_page():
                 for c in str_cols: df_matrik[c] = df_matrik.get(c, pd.Series("")).fillna("")
                 df_matrik['Selisih'] = df_matrik['Tot_m'] - df_matrik['Tot_s']
                 
-                if df_matrik.empty: st.info("Tidak ada data rincian pada kedua versi yang dipilih.")
+                if df_matrik.empty: st.info(f"Tidak ada data rincian pada kedua versi untuk sumber dana {sumber_dana_matrik}.")
                 else:
-                    html_matrik = generate_matrik_html(df_matrik, pilih_v1, pilih_v2, kegiatan_code_map, tahun_aktif, tgl_cetak_matrik, dekan_matrik, nip_matrik)
+                    html_matrik = generate_matrik_html(df_matrik, pilih_v1, pilih_v2, kegiatan_code_map, tahun_aktif, tgl_cetak_matrik, dekan_matrik, nip_matrik, sumber_dana_matrik)
                     with st.container(border=True): components.html(html_matrik, height=600, scrolling=True)
-                    st.download_button("📥 Cetak Matrik Perubahan (.html)", data=html_matrik.encode('utf-8'), file_name=f"Matrik_{tahun_aktif}_{pilih_v1}_vs_{pilih_v2}.html", mime="text/html")
+                    st.download_button("📥 Cetak Matrik Perubahan (.html)", data=html_matrik.encode('utf-8'), file_name=f"Matrik_{sumber_dana_matrik}_{tahun_aktif}_{pilih_v1}_vs_{pilih_v2}.html", mime="text/html")
 
     # -----------------------------------------------------------------
     # TAB 6: RAPAT & SIMULASI REVISI (WAR ROOM)
@@ -886,23 +896,26 @@ def show_page():
         if df_thn_rapat.empty:
             st.warning("Belum ada data untuk tahun aktif ini. Silakan buat RAB terlebih dahulu.")
         else:
+            col_wr1, col_wr2 = st.columns(2)
             list_v_rapat = sorted(df_thn_rapat['Versi_RAB'].unique())
-            versi_rapat = st.selectbox("Pilih Versi yang Akan Disimulasikan / Diedit Lintas Kegiatan:", list_v_rapat)
+            versi_rapat = col_wr1.selectbox("Pilih Versi yang Akan Disimulasikan / Diedit Lintas Kegiatan:", list_v_rapat)
+            
+            # --- PENAMBAHAN FILTER SUMBER DANA ---
+            sumber_dana_rapat = col_wr2.radio("Sumber Dana:", ["BOPTN", "PNBP"], key="sd_rapat", horizontal=True)
 
-            df_ur = df_thn_rapat[df_thn_rapat['Versi_RAB'] == versi_rapat]
+            df_ur = df_thn_rapat[(df_thn_rapat['Versi_RAB'] == versi_rapat) & (df_thn_rapat['Sumber_Dana'] == sumber_dana_rapat)]
             df_dr = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_ur['ID_RAB'])]
-            pagu_awal = df_ur['Alokasi'].sum()
+            pagu_awal = df_ur['Alokasi'].sum() if not df_ur.empty else 0
 
             keg_to_id = {row['Kegiatan']: row['ID_RAB'] for _, row in df_ur.iterrows()}
-            list_keg_rapat = list(keg_to_id.keys())
+            list_keg_rapat = list(keg_to_id.keys()) if keg_to_id else ["-"]
             
-            sumber_dana_rapat = df_ur['Sumber_Dana'].iloc[0] if not df_ur.empty else "BOPTN"
             list_akun_raw = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_dana_rapat]
             list_akun_rapat = (list_akun_raw['Account_Code'].astype(str) + " - " + list_akun_raw['Account_Name']).tolist() if not list_akun_raw.empty else ["-"]
 
             # TOMBOL SUNTIK KEGIATAN MENDADAK
             with st.expander("⚡ Suntik Kegiatan Mendadak (Buat Wadah Baru)"):
-                st.write("Tambahkan wadah kegiatan baru ke versi ini tanpa harus pindah tab.")
+                st.write(f"Tambahkan wadah kegiatan baru ke versi ini khusus untuk sumber dana {sumber_dana_rapat}.")
                 with st.form("form_suntik_kegiatan"):
                     s_kro = st.selectbox("KRO", df_m_kro[df_m_kro['Sumber_Dana'] == sumber_dana_rapat]['KRO'].tolist() or ["-"])
                     s_ro = st.selectbox("RO", df_m_ro[df_m_ro['Sumber_Dana'] == sumber_dana_rapat]['RO'].tolist() or ["-"])
@@ -923,122 +936,125 @@ def show_page():
                             }])
                             df_rab_utama = pd.concat([df_rab_utama, new_u], ignore_index=True)
                             save_table(df_rab_utama, "rab_utama")
-                            st.success("Kegiatan berhasil disuntik!"); st.rerun()
+                            st.success(f"Kegiatan {sumber_dana_rapat} berhasil disuntik!"); st.rerun()
 
             st.markdown("---")
             
-            # PLACEHOLDER UNTUK PANEL HUD AGAR TAMPIL DI ATAS TAPI DIHITUNG TERAKHIR
-            hud_placeholder = st.empty()
-            st.markdown("### 📋 Lembar Kerja Berjenjang (Hierarchical Worksheet)")
+            if df_ur.empty:
+                st.info(f"Belum ada kegiatan dengan sumber dana {sumber_dana_rapat} pada versi {versi_rapat}.")
+            else:
+                # PLACEHOLDER UNTUK PANEL HUD AGAR TAMPIL DI ATAS TAPI DIHITUNG TERAKHIR
+                hud_placeholder = st.empty()
+                st.markdown("### 📋 Lembar Kerja Berjenjang (Hierarchical Worksheet)")
 
-            # MENGURUTKAN DATA SESUAI HIRARKI KRO -> RO -> KOMPONEN -> KEGIATAN
-            df_ur_sorted = df_ur.sort_values(by=['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan'])
-            
-            all_valid_edits = []
-            pagu_live = 0
-            
-            c_kro, c_ro, c_komp, c_sub = "", "", "", ""
-
-            # LOOPING PEMBUATAN TABEL PER KEGIATAN DENGAN VISUAL ALA RKAKL
-            for _, row_keg in df_ur_sorted.iterrows():
-                # --- VISUAL HEADER HIERARCHY ---
-                if row_keg['KRO'] != c_kro:
-                    st.markdown(f"<div style='background-color:#d9e1f2; color:#000; padding:8px; font-weight:bold; margin-top:15px; border-radius:4px;'>🟦 KRO: {row_keg['KRO']}</div>", unsafe_allow_html=True)
-                    c_kro = row_keg['KRO']; c_ro = ""
-                if row_keg['RO'] != c_ro:
-                    st.markdown(f"<div style='background-color:#e9edf4; color:#000; padding:6px; font-weight:bold; margin-left:15px; border-left:3px solid #d9e1f2;'>💠 RO: {row_keg['RO']}</div>", unsafe_allow_html=True)
-                    c_ro = row_keg['RO']; c_komp = ""
-                if row_keg['Komponen'] != c_komp:
-                    st.markdown(f"<div style='background-color:#fff2cc; color:#000; padding:6px; font-weight:bold; margin-left:30px; border-left:3px solid #e9edf4;'>🟨 KOMPONEN: {row_keg['Komponen']}</div>", unsafe_allow_html=True)
-                    c_komp = row_keg['Komponen']; c_sub = ""
-                if row_keg['Sub_Komponen'] != c_sub and str(row_keg['Sub_Komponen']).strip() not in ["", "-"]:
-                    st.markdown(f"<div style='background-color:#fce4d6; color:#000; padding:6px; font-weight:bold; margin-left:45px; border-left:3px solid #fff2cc;'>🟧 SUB KOMP: {row_keg['Sub_Komponen']}</div>", unsafe_allow_html=True)
-                    c_sub = row_keg['Sub_Komponen']
-
-                keg_id = row_keg['ID_RAB']
-                keg_name = row_keg['Kegiatan']
-                keg_code = kegiatan_code_map.get(keg_name, "0000")
+                # MENGURUTKAN DATA SESUAI HIRARKI KRO -> RO -> KOMPONEN -> KEGIATAN
+                df_ur_sorted = df_ur.sort_values(by=['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan'])
                 
-                # SETUP DATAFRAME UNTUK KEGIATAN INI SAJA
-                df_det_keg = df_dr[df_dr['ID_RAB'] == keg_id].copy()
-                df_det_keg['Target_Kegiatan'] = keg_name 
+                all_valid_edits = []
+                pagu_live = 0
                 
-                df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
-                if df_edit_view.empty:
-                    df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
+                c_kro, c_ro, c_komp, c_sub = "", "", "", ""
 
-                # EXPANDER UNTUK EDITOR (WARNA HIJAU SEPERTI KEGIATAN DI RKAKL)
-                with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()}", expanded=True):
-                    edited_keg = st.data_editor(
-                        df_edit_view,
-                        num_rows="dynamic",
-                        use_container_width=True,
-                        key=f"ed_{keg_id}",
-                        column_config={
-                            "Target_Kegiatan": st.column_config.SelectboxColumn("Pindah Ke Kegiatan", options=list_keg_rapat, required=True),
-                            "Akun_Belanja": st.column_config.SelectboxColumn("Akun Belanja", options=list_akun_rapat, required=True),
-                            "Uraian": st.column_config.TextColumn("Uraian Detail Belanja", required=True),
-                            "Vol_1": st.column_config.NumberColumn("Vol 1", min_value=0),
-                            "Sat_1": st.column_config.TextColumn("Sat 1"),
-                            "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0),
-                            "Sat_2": st.column_config.TextColumn("Sat 2"),
-                            "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0),
-                        }
-                    )
+                # LOOPING PEMBUATAN TABEL PER KEGIATAN DENGAN VISUAL ALA RKAKL
+                for _, row_keg in df_ur_sorted.iterrows():
+                    # --- VISUAL HEADER HIERARCHY ---
+                    if row_keg['KRO'] != c_kro:
+                        st.markdown(f"<div style='background-color:#d9e1f2; color:#000; padding:8px; font-weight:bold; margin-top:15px; border-radius:4px;'>🟦 KRO: {row_keg['KRO']}</div>", unsafe_allow_html=True)
+                        c_kro = row_keg['KRO']; c_ro = ""
+                    if row_keg['RO'] != c_ro:
+                        st.markdown(f"<div style='background-color:#e9edf4; color:#000; padding:6px; font-weight:bold; margin-left:15px; border-left:3px solid #d9e1f2;'>💠 RO: {row_keg['RO']}</div>", unsafe_allow_html=True)
+                        c_ro = row_keg['RO']; c_komp = ""
+                    if row_keg['Komponen'] != c_komp:
+                        st.markdown(f"<div style='background-color:#fff2cc; color:#000; padding:6px; font-weight:bold; margin-left:30px; border-left:3px solid #e9edf4;'>🟨 KOMPONEN: {row_keg['Komponen']}</div>", unsafe_allow_html=True)
+                        c_komp = row_keg['Komponen']; c_sub = ""
+                    if row_keg['Sub_Komponen'] != c_sub and str(row_keg['Sub_Komponen']).strip() not in ["", "-"]:
+                        st.markdown(f"<div style='background-color:#fce4d6; color:#000; padding:6px; font-weight:bold; margin-left:45px; border-left:3px solid #fff2cc;'>🟧 SUB KOMP: {row_keg['Sub_Komponen']}</div>", unsafe_allow_html=True)
+                        c_sub = row_keg['Sub_Komponen']
+
+                    keg_id = row_keg['ID_RAB']
+                    keg_name = row_keg['Kegiatan']
+                    keg_code = kegiatan_code_map.get(keg_name, "0000")
                     
-                    # HITUNG LIVE PAGU PER KEGIATAN
-                    edited_keg['Vol_1'] = pd.to_numeric(edited_keg['Vol_1']).fillna(1)
-                    edited_keg['Vol_2'] = pd.to_numeric(edited_keg['Vol_2']).fillna(1)
-                    edited_keg.loc[edited_keg['Vol_2'] == 0, 'Vol_2'] = 1 
-                    edited_keg['Harga_Satuan'] = pd.to_numeric(edited_keg['Harga_Satuan']).fillna(0)
+                    # SETUP DATAFRAME UNTUK KEGIATAN INI SAJA
+                    df_det_keg = df_dr[df_dr['ID_RAB'] == keg_id].copy()
+                    df_det_keg['Target_Kegiatan'] = keg_name 
                     
-                    keg_total = (edited_keg['Vol_1'] * edited_keg['Vol_2'] * edited_keg['Harga_Satuan']).sum()
-                    pagu_live += keg_total
-                    
-                    st.caption(f"**Total Anggaran Kegiatan Ini: Rp {format_rupiah(keg_total)}**")
-                    all_valid_edits.append(edited_keg)
+                    df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
+                    if df_edit_view.empty:
+                        df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
 
-            # RENDER HUD DI PLACEHOLDER PALING ATAS
-            with hud_placeholder.container():
-                st.markdown("### 🎛️ Panel Indikator Anggaran (Real-Time)")
-                col_h1, col_h2, col_h3 = st.columns(3)
-                col_h1.metric("Pagu Awal Versi", f"Rp {format_rupiah(pagu_awal)}")
-                col_h2.metric("Total Draf Saat Ini", f"Rp {format_rupiah(pagu_live)}")
-                
-                selisih_dana = pagu_awal - pagu_live
-                if selisih_dana >= 0:
-                    col_h3.metric("Keranjang Sisa Dana", f"Rp {format_rupiah(selisih_dana)}")
-                else:
-                    col_h3.metric("🚨 DEFISIT (OVER BUDGET)", f"Rp {format_rupiah(selisih_dana)}")
-                st.markdown("<br>", unsafe_allow_html=True)
+                    # EXPANDER UNTUK EDITOR (WARNA HIJAU SEPERTI KEGIATAN DI RKAKL)
+                    with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()}", expanded=True):
+                        edited_keg = st.data_editor(
+                            df_edit_view,
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            key=f"ed_{keg_id}",
+                            column_config={
+                                "Target_Kegiatan": st.column_config.SelectboxColumn("Pindah Ke Kegiatan", options=list_keg_rapat, required=True),
+                                "Akun_Belanja": st.column_config.SelectboxColumn("Akun Belanja", options=list_akun_rapat, required=True),
+                                "Uraian": st.column_config.TextColumn("Uraian Detail Belanja", required=True),
+                                "Vol_1": st.column_config.NumberColumn("Vol 1", min_value=0),
+                                "Sat_1": st.column_config.TextColumn("Sat 1"),
+                                "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0),
+                                "Sat_2": st.column_config.TextColumn("Sat 2"),
+                                "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0),
+                            }
+                        )
+                        
+                        # HITUNG LIVE PAGU PER KEGIATAN
+                        edited_keg['Vol_1'] = pd.to_numeric(edited_keg['Vol_1']).fillna(1)
+                        edited_keg['Vol_2'] = pd.to_numeric(edited_keg['Vol_2']).fillna(1)
+                        edited_keg.loc[edited_keg['Vol_2'] == 0, 'Vol_2'] = 1 
+                        edited_keg['Harga_Satuan'] = pd.to_numeric(edited_keg['Harga_Satuan']).fillna(0)
+                        
+                        keg_total = (edited_keg['Vol_1'] * edited_keg['Vol_2'] * edited_keg['Harga_Satuan']).sum()
+                        pagu_live += keg_total
+                        
+                        st.caption(f"**Total Anggaran Kegiatan Ini: Rp {format_rupiah(keg_total)}**")
+                        all_valid_edits.append(edited_keg)
 
-            # -----------------------------------------------------------
-            # COMMIT BUTTON (KETOK PALU)
-            # -----------------------------------------------------------
-            st.markdown("---")
-            if st.button("💾 Ketok Palu: Simpan Hasil Revisi ke Database", type="primary", use_container_width=True):
-                edited_df_all = pd.concat(all_valid_edits)
-                valid_edits = edited_df_all[edited_df_all['Uraian'].str.strip() != ""].copy()
-                
-                # Pemetaan mutasi kegiatan (Pindah Rumah)
-                valid_edits['ID_RAB'] = valid_edits['Target_Kegiatan'].map(keg_to_id)
-                valid_edits = valid_edits.dropna(subset=['ID_RAB'])
-                valid_edits['Total_Biaya'] = valid_edits['Vol_1'] * valid_edits['Vol_2'] * valid_edits['Harga_Satuan']
-                
-                # 1. Hapus detail lama yang ada di versi ini
-                df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(keg_to_id.values())]
-                
-                # 2. Masukkan detail yang baru
-                new_detail = valid_edits[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
-                df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
-                
-                # 3. Update nominal 'Alokasi' di tabel utama
-                new_alokasi = valid_edits.groupby('ID_RAB')['Total_Biaya'].sum()
-                for id_r in keg_to_id.values():
-                    tot_b = new_alokasi.get(id_r, 0)
-                    df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Alokasi'] = tot_b
+                # RENDER HUD DI PLACEHOLDER PALING ATAS
+                with hud_placeholder.container():
+                    st.markdown("### 🎛️ Panel Indikator Anggaran (Real-Time)")
+                    col_h1, col_h2, col_h3 = st.columns(3)
+                    col_h1.metric("Pagu Awal Versi", f"Rp {format_rupiah(pagu_awal)}")
+                    col_h2.metric("Total Draf Saat Ini", f"Rp {format_rupiah(pagu_live)}")
                     
-                save_table(df_rab_detail, "rab_detail")
-                save_table(df_rab_utama, "rab_utama")
-                st.success("Perubahan berhasil diketok palu dan disimpan permanen!")
-                st.rerun()
+                    selisih_dana = pagu_awal - pagu_live
+                    if selisih_dana >= 0:
+                        col_h3.metric("Keranjang Sisa Dana", f"Rp {format_rupiah(selisih_dana)}")
+                    else:
+                        col_h3.metric("🚨 DEFISIT (OVER BUDGET)", f"Rp {format_rupiah(selisih_dana)}")
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                # -----------------------------------------------------------
+                # COMMIT BUTTON (KETOK PALU)
+                # -----------------------------------------------------------
+                st.markdown("---")
+                if st.button("💾 Ketok Palu: Simpan Hasil Revisi ke Database", type="primary", use_container_width=True):
+                    edited_df_all = pd.concat(all_valid_edits)
+                    valid_edits = edited_df_all[edited_df_all['Uraian'].str.strip() != ""].copy()
+                    
+                    # Pemetaan mutasi kegiatan (Pindah Rumah)
+                    valid_edits['ID_RAB'] = valid_edits['Target_Kegiatan'].map(keg_to_id)
+                    valid_edits = valid_edits.dropna(subset=['ID_RAB'])
+                    valid_edits['Total_Biaya'] = valid_edits['Vol_1'] * valid_edits['Vol_2'] * valid_edits['Harga_Satuan']
+                    
+                    # 1. Hapus detail lama yang ada di versi ini
+                    df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(keg_to_id.values())]
+                    
+                    # 2. Masukkan detail yang baru
+                    new_detail = valid_edits[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
+                    df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
+                    
+                    # 3. Update nominal 'Alokasi' di tabel utama
+                    new_alokasi = valid_edits.groupby('ID_RAB')['Total_Biaya'].sum()
+                    for id_r in keg_to_id.values():
+                        tot_b = new_alokasi.get(id_r, 0)
+                        df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Alokasi'] = tot_b
+                        
+                    save_table(df_rab_detail, "rab_detail")
+                    save_table(df_rab_utama, "rab_utama")
+                    st.success("Perubahan berhasil diketok palu dan disimpan permanen!")
+                    st.rerun()
