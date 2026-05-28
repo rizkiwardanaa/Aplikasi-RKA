@@ -5,4 +5,4 @@ SQLAlchemy
 psycopg2-binary
 google-generativeai>=0.5.4
 python-docx
-PyPDF2
+pdfplumber
