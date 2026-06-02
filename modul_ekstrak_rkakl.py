@@ -48,7 +48,7 @@ def extract_vht(text):
             
     return None, None, None, None
 
-# --- MESIN PISAU PYTHON (LEAK-PROOF PARSER) ---
+# --- MESIN PISAU PYTHON ---
 def parse_pdf_rkakl(file_bytes):
     text = ""
     with pdfplumber.open(file_bytes) as pdf:
@@ -61,19 +61,24 @@ def parse_pdf_rkakl(file_bytes):
     extracted_data = []
     debug_logs = []
     
-    # State Memory untuk Hirarki
-    curr_kro = "-"
-    curr_ro = "-"
-    curr_komp = "-"
-    curr_subkomp = "-"
-    curr_keg_name = "Kegiatan Default"
-    curr_akun_code = "000000"
-    curr_akun_name = "Akun Tidak Dikenal"
+    curr_kro, curr_ro, curr_komp, curr_subkomp = "-", "-", "-", "-"
+    curr_keg_name, curr_akun_code, curr_akun_name = "Kegiatan Default", "000000", "Akun Tidak Dikenal"
     
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
-        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE).strip()
+        garbage_phrases = [
+            r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
+            r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
+            r"\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)", r"TOTAL\s+[\d\.,]+",
+            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+", r"Dekan,", r"Prof\.\s+Dr\..*", r"NIP\.\s*[\d-]+"
+        ]
+        for g in garbage_phrases:
+            b_text = re.sub(g, "", b_text, flags=re.IGNORECASE)
+
+        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        
         vol, hrg, tot, matched_str = extract_vht(clean_text)
         
         if vol is None:
@@ -118,9 +123,7 @@ def parse_pdf_rkakl(file_bytes):
                 if len(p1) == 2: s1 = p1[1].title()
                 
         if v1 * v2 != vol: 
-            v1 = vol 
-            v2 = 1
-            s2 = "-"
+            v1, v2, s2 = vol, 1, "-"
 
         debug_logs.append(f"✅ SUKSES: {uraian_full}")
         return {
@@ -141,11 +144,9 @@ def parse_pdf_rkakl(file_bytes):
         line = line.strip()
         if not line: continue
 
-        # FILTER BARIS STANDALONE GARBAGE (Header/Footer Murni)
         if re.match(r"^(KODE|PROGRAM/KEGIATAN|KOMPONEN|VOLUME|\(\d\)|TOTAL|Samarinda|Dekan|Prof\.|NIP\.)", line, re.IGNORECASE):
             continue
 
-        # IDENTIFIKASI HIRARKI DENGAN REGEX SUPER KETAT
         match_kode = re.match(r"^([^\s]+)\s+(.*)", line)
         if match_kode:
             kode = match_kode.group(1)
@@ -160,8 +161,7 @@ def parse_pdf_rkakl(file_bytes):
             elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode): is_valid_kode = True
 
             if is_valid_kode:
-                flush_buffer() # WAJIB FLUSH SEBELUM GANTI JUDUL AGAR TIDAK BOCOR KE BAWAH!
-                
+                flush_buffer() 
                 if re.match(r"^\d{6}$", kode):
                     curr_akun_code = kode
                     curr_akun_name = desc
@@ -179,16 +179,15 @@ def parse_pdf_rkakl(file_bytes):
                 continue
 
         if line.startswith("-"):
-            flush_buffer() # WAJIB FLUSH SEBELUM MASUK ITEM BARU!
+            flush_buffer() 
             buffer_text = line
         elif buffer_text:
             buffer_text += " " + line
             
-    flush_buffer() # Flush sisa terakhir di ujung dokumen
+    flush_buffer() 
 
     df_hasil = pd.DataFrame(extracted_data)
     if not df_hasil.empty:
-        # VAKUM ANTI-DUPLIKAT (Membunuh Ghost Text dari PDF)
         df_hasil = df_hasil.drop_duplicates(subset=['Kegiatan', 'Akun_Code', 'Uraian', 'Total_Biaya'], keep='first').reset_index(drop=True)
 
     return df_hasil, debug_logs
@@ -288,9 +287,12 @@ def show_page():
                 df_rab_utama = load_table("rab_utama")
                 df_rab_detail = load_table("rab_detail")
                 
+                # Cek versi aktif yang sudah ada agar tidak menimpa ganda
+                active_vs = df_rab_utama[(df_rab_utama['Tahun'] == thn_target) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
+                is_act = 1 if len(active_vs) == 0 or ver_target in active_vs else 0
+
                 kegiatan_unik = df_edit['Kegiatan'].unique()
                 for i, keg_name in enumerate(kegiatan_unik):
-                    # SISTEM ANTRI ID UNIK (Mencegah Tabrakan ID Milidetik)
                     new_id = f"RAB-EXT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{i}"
                     
                     df_keg_details = df_edit[df_edit['Kegiatan'] == keg_name].copy()
@@ -307,7 +309,7 @@ def show_page():
                         "Sumber_Dana": sumber_dana, "KRO": kro_v, "RO": ro_v, "Komponen": komp_v, "Sub_Komponen": sub_v,
                         "Kegiatan": keg_name, "Sasaran": "-", "Volume": 1, "Satuan": "Layanan", "Alokasi": total_alokasi,
                         "Jabatan": "Dekan", "Nama_Pejabat": "-", "NIP_Pejabat": "-",
-                        "Versi_RAB": ver_target, "Is_Active": 1
+                        "Versi_RAB": ver_target, "Is_Active": is_act # LOGIKA AKTIF DIPERBAIKI DI SINI
                     }])
                     df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
                     
@@ -320,5 +322,5 @@ def show_page():
                 save_table(df_rab_detail, "rab_detail")
                 
                 st.session_state.ekstrak_result = pd.DataFrame() 
-                st.success("🎉 Dokumen RKAKL berhasil diinjeksi bersih tanpa duplikat!")
+                st.success("🎉 Dokumen RKAKL berhasil diinjeksi bersih tanpa merusak status aktif!")
                 st.rerun()
