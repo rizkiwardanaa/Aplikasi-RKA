@@ -48,7 +48,7 @@ def extract_vht(text):
             
     return None, None, None, None
 
-# --- MESIN PISAU PYTHON (SUPER PARSER HIRARKI & ANTI-SAMPAH) ---
+# --- MESIN PISAU PYTHON (LEAK-PROOF PARSER) ---
 def parse_pdf_rkakl(file_bytes):
     text = ""
     with pdfplumber.open(file_bytes) as pdf:
@@ -61,32 +61,19 @@ def parse_pdf_rkakl(file_bytes):
     extracted_data = []
     debug_logs = []
     
-    curr_kro, curr_ro, curr_komp, curr_subkomp = "-", "-", "-", "-"
-    curr_keg_name, curr_akun_code, curr_akun_name = "Kegiatan Default", "000000", "Akun Tidak Dikenal"
+    # State Memory untuk Hirarki
+    curr_kro = "-"
+    curr_ro = "-"
+    curr_komp = "-"
+    curr_subkomp = "-"
+    curr_keg_name = "Kegiatan Default"
+    curr_akun_code = "000000"
+    curr_akun_name = "Akun Tidak Dikenal"
     
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
-        # PEMBERSIH SAMPAH HEADER & FOOTER DI TENGAH KALIMAT
-        garbage_phrases = [
-            r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)",
-            r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
-            r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)",
-            r"TAHUN\s+SUMBER",
-            r"TARGET",
-            r"\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)",
-            r"TOTAL\s+[\d\.,]+",
-            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+",
-            r"Dekan,",
-            r"Prof\.\s+Dr\..*",
-            r"NIP\.\s*[\d-]+"
-        ]
-        for g in garbage_phrases:
-            b_text = re.sub(g, "", b_text, flags=re.IGNORECASE)
-
-        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE)
-        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-        
+        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE).strip()
         vol, hrg, tot, matched_str = extract_vht(clean_text)
         
         if vol is None:
@@ -131,7 +118,9 @@ def parse_pdf_rkakl(file_bytes):
                 if len(p1) == 2: s1 = p1[1].title()
                 
         if v1 * v2 != vol: 
-            v1, v2, s2 = vol, 1, "-"
+            v1 = vol 
+            v2 = 1
+            s2 = "-"
 
         debug_logs.append(f"✅ SUKSES: {uraian_full}")
         return {
@@ -140,6 +129,13 @@ def parse_pdf_rkakl(file_bytes):
             "Uraian": uraian_full, "Vol_1": v1, "Sat_1": s1, "Vol_2": v2, "Sat_2": s2,
             "Harga_Satuan": hrg, "Total_Biaya": tot
         }
+
+    def flush_buffer():
+        nonlocal buffer_text
+        if buffer_text:
+            res = process_buffer(buffer_text, curr_kro, curr_ro, curr_komp, curr_subkomp, curr_keg_name, curr_akun_code, curr_akun_name)
+            if res: extracted_data.append(res)
+            buffer_text = ""
 
     for line in lines:
         line = line.strip()
@@ -155,45 +151,52 @@ def parse_pdf_rkakl(file_bytes):
             kode = match_kode.group(1)
             desc = re.sub(r"[\d\.,]+\s*(BOPTN|PNBP)?$", "", match_kode.group(2)).strip()
             
-            if re.match(r"^\d{6}$", kode): # 6 digit -> Akun
-                curr_akun_code = kode
-                curr_akun_name = desc
-                continue
-            elif re.match(r"^\d{4}$", kode): # 4 digit -> Kegiatan
-                if not desc.lower().startswith("penyediaan"):
-                    curr_keg_name = desc
-                continue
-            elif re.match(r"^\d{3}$", kode): # 3 digit -> Komponen
-                curr_komp = f"{kode} - {desc}"
-                continue
-            elif re.match(r"^[A-Z]$", kode): # 1 Huruf Besar -> Sub Komponen
-                curr_subkomp = f"{kode} - {desc}"
-                continue
-            elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}$", kode): # KRO (cth: 7729.BEI)
-                curr_kro = f"{kode} - {desc}"
-                continue
-            elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode): # RO (cth: 7729.BEI.001)
-                curr_ro = f"{kode} - {desc}"
+            is_valid_kode = False
+            if re.match(r"^\d{6}$", kode): is_valid_kode = True
+            elif re.match(r"^\d{4}$", kode): is_valid_kode = True
+            elif re.match(r"^\d{3}$", kode): is_valid_kode = True
+            elif re.match(r"^[A-Z]$", kode): is_valid_kode = True
+            elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}$", kode): is_valid_kode = True
+            elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode): is_valid_kode = True
+
+            if is_valid_kode:
+                flush_buffer() # WAJIB FLUSH SEBELUM GANTI JUDUL AGAR TIDAK BOCOR KE BAWAH!
+                
+                if re.match(r"^\d{6}$", kode):
+                    curr_akun_code = kode
+                    curr_akun_name = desc
+                elif re.match(r"^\d{4}$", kode):
+                    if not desc.lower().startswith("penyediaan"):
+                        curr_keg_name = desc
+                elif re.match(r"^\d{3}$", kode):
+                    curr_komp = f"{kode} - {desc}"
+                elif re.match(r"^[A-Z]$", kode):
+                    curr_subkomp = f"{kode} - {desc}"
+                elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}$", kode):
+                    curr_kro = f"{kode} - {desc}"
+                elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode):
+                    curr_ro = f"{kode} - {desc}"
                 continue
 
         if line.startswith("-"):
-            if buffer_text:
-                res = process_buffer(buffer_text, curr_kro, curr_ro, curr_komp, curr_subkomp, curr_keg_name, curr_akun_code, curr_akun_name)
-                if res: extracted_data.append(res)
+            flush_buffer() # WAJIB FLUSH SEBELUM MASUK ITEM BARU!
             buffer_text = line
-        elif buffer_text and not re.match(r"^(\d{6}|\d{4}|[A-Z]|\d{3})\b", line):
+        elif buffer_text:
             buffer_text += " " + line
             
-    if buffer_text:
-        res = process_buffer(buffer_text, curr_kro, curr_ro, curr_komp, curr_subkomp, curr_keg_name, curr_akun_code, curr_akun_name)
-        if res: extracted_data.append(res)
+    flush_buffer() # Flush sisa terakhir di ujung dokumen
 
-    return pd.DataFrame(extracted_data), debug_logs
+    df_hasil = pd.DataFrame(extracted_data)
+    if not df_hasil.empty:
+        # VAKUM ANTI-DUPLIKAT (Membunuh Ghost Text dari PDF)
+        df_hasil = df_hasil.drop_duplicates(subset=['Kegiatan', 'Akun_Code', 'Uraian', 'Total_Biaya'], keep='first').reset_index(drop=True)
+
+    return df_hasil, debug_logs
 
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. Sistem membaca data hingga level KRO dan RO secara presisi.")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. Sistem ini dilengkapi fitur Anti-Bocor Halaman dan Vakum Duplikat.")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -211,13 +214,13 @@ def show_page():
         
         if st.button("🚀 Ekstrak Dokumen Sekarang", type="primary"):
             if file_pdf:
-                with st.spinner("Menganalisis hirarki & memverifikasi matematika teks..."):
+                with st.spinner("Menganalisis hirarki, mencegah kebocoran, & memverifikasi matematika teks..."):
                     df_hasil, log_debug = parse_pdf_rkakl(file_pdf)
                     st.session_state.ekstrak_log = log_debug
                     
                     if not df_hasil.empty:
                         st.session_state.ekstrak_result = df_hasil
-                        st.success(f"Berhasil mengekstrak {len(df_hasil)} baris rincian belanja!")
+                        st.success(f"Berhasil mengekstrak {len(df_hasil)} baris rincian belanja bersih tanpa duplikat!")
                     else:
                         st.error("❌ Gagal mengekstrak rincian belanja. Cek Log Debug Mesin.")
             else:
@@ -232,7 +235,7 @@ def show_page():
     if not st.session_state.ekstrak_result.empty:
         st.markdown("---")
         st.subheader("3. Ruang Karantina (Preview Data)")
-        st.info("Periksa hasil bacaan mesin di bawah ini. Anda bisa mengedit teks langsung jika ada typo.")
+        st.info("Periksa hasil bacaan mesin di bawah ini. Tidak akan ada lagi rincian yang terduplikasi secara gaib.")
         
         cols_order = ['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan', 'Akun_Code', 'Akun_Name', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']
         df_display = st.session_state.ekstrak_result[cols_order]
@@ -286,8 +289,9 @@ def show_page():
                 df_rab_detail = load_table("rab_detail")
                 
                 kegiatan_unik = df_edit['Kegiatan'].unique()
-                for keg_name in kegiatan_unik:
-                    new_id = f"RAB-EXT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                for i, keg_name in enumerate(kegiatan_unik):
+                    # SISTEM ANTRI ID UNIK (Mencegah Tabrakan ID Milidetik)
+                    new_id = f"RAB-EXT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{i}"
                     
                     df_keg_details = df_edit[df_edit['Kegiatan'] == keg_name].copy()
                     total_alokasi = df_keg_details['Total_Biaya'].sum()
@@ -316,5 +320,5 @@ def show_page():
                 save_table(df_rab_detail, "rab_detail")
                 
                 st.session_state.ekstrak_result = pd.DataFrame() 
-                st.success("🎉 Dokumen RKAKL berhasil diinjeksi dengan sempurna!")
+                st.success("🎉 Dokumen RKAKL berhasil diinjeksi bersih tanpa duplikat!")
                 st.rerun()
