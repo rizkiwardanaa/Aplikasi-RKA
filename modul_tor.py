@@ -210,7 +210,7 @@ def build_docx(meta, narasi, tampilkan_paraf=False):
         
         for row in table_paraf.rows:
             row.cells[0].width = Cm(1.2)
-            row.cells[1].width = Cm(4.5)
+            row.cells[1].width = Cm(6.5)
             row.cells[2].width = Cm(3.0)
             
         hdr_cells = table_paraf.rows[0].cells
@@ -218,10 +218,11 @@ def build_docx(meta, narasi, tampilkan_paraf=False):
         hdr_cells[1].text = 'Jabatan'
         hdr_cells[2].text = 'Paraf'
         
+        jabatan_list = ["Wakil Dekan Bidang Keuangan dan Umum", "Kepala Bagian Umum", "Staf Perencanaan"]
         for i in range(1, 4):
             table_paraf.rows[i].cells[0].text = str(i)
-            table_paraf.rows[i].cells[1].text = ""
-            table_paraf.rows[i].cells[2].text = "\n\n" # Spasi agar baris lebih tinggi
+            table_paraf.rows[i].cells[1].text = f" {jabatan_list[i-1]}"
+            table_paraf.rows[i].cells[2].text = "\n\n" 
 
     output = BytesIO()
     doc.save(output)
@@ -241,15 +242,15 @@ def generate_tor_html(meta, narasi, tampilkan_paraf=False):
     paraf_html = ""
     if tampilkan_paraf:
         paraf_html = """
-        <table style="width: 250px; border-collapse: collapse; float: left; margin-top: 60px; font-size: 8.5pt;">
+        <table style="width: 320px; border-collapse: collapse; float: left; margin-top: 60px; font-size: 8.5pt;">
             <tr>
-                <th style="border: 1px solid black; padding: 4px; text-align: center; width: 15%;">No</th>
-                <th style="border: 1px solid black; padding: 4px; text-align: center; width: 55%;">Jabatan</th>
-                <th style="border: 1px solid black; padding: 4px; text-align: center; width: 30%;">Paraf</th>
+                <th style="border: 1px solid black; padding: 4px; text-align: center; width: 10%;">No</th>
+                <th style="border: 1px solid black; padding: 4px; text-align: center; width: 65%;">Jabatan</th>
+                <th style="border: 1px solid black; padding: 4px; text-align: center; width: 25%;">Paraf</th>
             </tr>
-            <tr><td style="border: 1px solid black; height: 30px; text-align: center; vertical-align: middle;">1</td><td style="border: 1px solid black;"></td><td style="border: 1px solid black;"></td></tr>
-            <tr><td style="border: 1px solid black; height: 30px; text-align: center; vertical-align: middle;">2</td><td style="border: 1px solid black;"></td><td style="border: 1px solid black;"></td></tr>
-            <tr><td style="border: 1px solid black; height: 30px; text-align: center; vertical-align: middle;">3</td><td style="border: 1px solid black;"></td><td style="border: 1px solid black;"></td></tr>
+            <tr><td style="border: 1px solid black; height: 35px; text-align: center; vertical-align: middle;">1</td><td style="border: 1px solid black; padding-left:5px;">Wakil Dekan Bidang Keuangan dan Umum</td><td style="border: 1px solid black;"></td></tr>
+            <tr><td style="border: 1px solid black; height: 35px; text-align: center; vertical-align: middle;">2</td><td style="border: 1px solid black; padding-left:5px;">Kepala Bagian Umum</td><td style="border: 1px solid black;"></td></tr>
+            <tr><td style="border: 1px solid black; height: 35px; text-align: center; vertical-align: middle;">3</td><td style="border: 1px solid black; padding-left:5px;">Staf Perencanaan</td><td style="border: 1px solid black;"></td></tr>
         </table>
         """
 
@@ -444,7 +445,6 @@ def show_page():
         if st.session_state.tor_json:
             st.success("Narasi telah siap. Metadata akan dilampirkan otomatis ke dalam dokumen.")
             
-            # --- TOGGLE PARAF DITAMBAHKAN DI SINI ---
             tampilkan_paraf = st.checkbox("Tampilkan Tabel Paraf (Khusus Arsip Hardcopy Internal)", value=False)
             st.markdown("---")
             
