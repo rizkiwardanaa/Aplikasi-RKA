@@ -698,7 +698,7 @@ def show_page():
                         
                         valid_detail["ID_RAB"] = id_rab_baru
                         valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
-                        valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat 2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
+                        valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
                         
                         df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
                         save_table(df_rab_detail, "rab_detail")
@@ -737,6 +737,23 @@ def show_page():
                     st.toast(f"Versi {pilih_v_arsip} Berhasil Diaktifkan!")
                     st.rerun()
 
+            st.markdown("---")
+            
+            # --- FITUR BARU: HAPUS SELURUH DOKUMEN DALAM SATU VERSI ---
+            with st.expander(f"⚠️ Zona Berbahaya: Hapus Seluruh Data Versi '{pilih_v_arsip}' ({sumber_dana_arsip})"):
+                st.error("Tindakan ini akan menghapus PERMANEN seluruh kegiatan dan rincian pada versi dan sumber dana yang dipilih. Berguna jika Anda salah mengekstrak dokumen ganda.")
+                konfirmasi_hapus = st.text_input(f"Ketik 'HAPUS' (huruf besar) untuk melanjutkan penghapusan {pilih_v_arsip} - {sumber_dana_arsip}:")
+                if st.button("🗑️ Eksekusi Hapus Versi", type="primary", use_container_width=True):
+                    if konfirmasi_hapus == "HAPUS":
+                        ids_to_delete = df_v_terpilih['ID_RAB'].tolist()
+                        df_rab_utama = df_rab_utama[~df_rab_utama['ID_RAB'].isin(ids_to_delete)]
+                        df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(ids_to_delete)]
+                        save_table(df_rab_utama, "rab_utama")
+                        save_table(df_rab_detail, "rab_detail")
+                        st.success(f"Seluruh data versi {pilih_v_arsip} ({sumber_dana_arsip}) berhasil dihapus!")
+                        st.rerun()
+                    else:
+                        st.warning("Konfirmasi gagal. Pastikan mengetik 'HAPUS' dengan huruf besar.")
             st.markdown("---")
 
             keg_list_aktif = sorted(df_v_terpilih['Kegiatan'].unique())
