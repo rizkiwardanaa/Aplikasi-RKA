@@ -48,7 +48,7 @@ def extract_vht(text):
             
     return None, None, None, None
 
-# --- MESIN PISAU PYTHON (SUPER PARSER HIRARKI) ---
+# --- MESIN PISAU PYTHON (SUPER PARSER HIRARKI & ANTI-SAMPAH) ---
 def parse_pdf_rkakl(file_bytes):
     text = ""
     with pdfplumber.open(file_bytes) as pdf:
@@ -61,23 +61,36 @@ def parse_pdf_rkakl(file_bytes):
     extracted_data = []
     debug_logs = []
     
-    # State Memory untuk Hirarki
-    curr_kro = "-"
-    curr_ro = "-"
-    curr_komp = "-"
-    curr_subkomp = "-"
-    curr_keg_name = "Kegiatan Default"
-    curr_akun_code = "000000"
-    curr_akun_name = "Akun Tidak Dikenal"
+    curr_kro, curr_ro, curr_komp, curr_subkomp = "-", "-", "-", "-"
+    curr_keg_name, curr_akun_code, curr_akun_name = "Kegiatan Default", "000000", "Akun Tidak Dikenal"
     
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
-        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE).strip()
+        # PEMBERSIH SAMPAH HEADER & FOOTER DI TENGAH KALIMAT
+        garbage_phrases = [
+            r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)",
+            r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
+            r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)",
+            r"TAHUN\s+SUMBER",
+            r"TARGET",
+            r"\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)",
+            r"TOTAL\s+[\d\.,]+",
+            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+",
+            r"Dekan,",
+            r"Prof\.\s+Dr\..*",
+            r"NIP\.\s*[\d-]+"
+        ]
+        for g in garbage_phrases:
+            b_text = re.sub(g, "", b_text, flags=re.IGNORECASE)
+
+        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        
         vol, hrg, tot, matched_str = extract_vht(clean_text)
         
         if vol is None:
-            debug_logs.append(f"❌ GAGAL (Tdk Ditemukan Angka): {clean_text}")
+            if clean_text: debug_logs.append(f"❌ GAGAL (Tdk Ditemukan Angka): {clean_text}")
             return None
             
         clean_text = clean_text.replace(matched_str, " ")
@@ -118,9 +131,7 @@ def parse_pdf_rkakl(file_bytes):
                 if len(p1) == 2: s1 = p1[1].title()
                 
         if v1 * v2 != vol: 
-            v1 = vol 
-            v2 = 1
-            s2 = "-"
+            v1, v2, s2 = vol, 1, "-"
 
         debug_logs.append(f"✅ SUKSES: {uraian_full}")
         return {
@@ -134,7 +145,11 @@ def parse_pdf_rkakl(file_bytes):
         line = line.strip()
         if not line: continue
 
-        # Deteksi Hirarki Kode yang Akurat (Termasuk KRO, RO, Komponen)
+        # FILTER BARIS STANDALONE GARBAGE (Header/Footer Murni)
+        if re.match(r"^(KODE|PROGRAM/KEGIATAN|KOMPONEN|VOLUME|\(\d\)|TOTAL|Samarinda|Dekan|Prof\.|NIP\.)", line, re.IGNORECASE):
+            continue
+
+        # IDENTIFIKASI HIRARKI DENGAN REGEX SUPER KETAT
         match_kode = re.match(r"^([^\s]+)\s+(.*)", line)
         if match_kode:
             kode = match_kode.group(1)
@@ -148,16 +163,16 @@ def parse_pdf_rkakl(file_bytes):
                 if not desc.lower().startswith("penyediaan"):
                     curr_keg_name = desc
                 continue
-            elif re.match(r"^\d{3}$", kode): # 3 digit -> Komponen (cth: 051)
+            elif re.match(r"^\d{3}$", kode): # 3 digit -> Komponen
                 curr_komp = f"{kode} - {desc}"
                 continue
-            elif re.match(r"^[A-Za-z]$", kode): # 1 huruf -> Sub Komponen (cth: A)
+            elif re.match(r"^[A-Z]$", kode): # 1 Huruf Besar -> Sub Komponen
                 curr_subkomp = f"{kode} - {desc}"
                 continue
-            elif kode.count('.') == 1: # 1 Titik -> KRO (cth: 7729.BEI)
+            elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}$", kode): # KRO (cth: 7729.BEI)
                 curr_kro = f"{kode} - {desc}"
                 continue
-            elif kode.count('.') == 2: # 2 Titik -> RO (cth: 7729.BEI.001)
+            elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode): # RO (cth: 7729.BEI.001)
                 curr_ro = f"{kode} - {desc}"
                 continue
 
@@ -219,7 +234,6 @@ def show_page():
         st.subheader("3. Ruang Karantina (Preview Data)")
         st.info("Periksa hasil bacaan mesin di bawah ini. Anda bisa mengedit teks langsung jika ada typo.")
         
-        # Urutan kolom yang ditampilkan agar enak dilihat
         cols_order = ['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan', 'Akun_Code', 'Akun_Name', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']
         df_display = st.session_state.ekstrak_result[cols_order]
         
@@ -227,35 +241,29 @@ def show_page():
 
         if st.button("💾 Konfirmasi & Simpan Permanen ke Database", type="primary", use_container_width=True):
             with st.spinner("Menyuntikkan data & Melakukan Auto-Heal Master..."):
-                
-                # --- AUTO-HEAL MASTER HIRARKI (KRO sampai SUB KOMPONEN) ---
                 df_m_kro = load_table("rab_m_kro")
                 df_m_ro = load_table("rab_m_ro")
                 df_m_komp = load_table("rab_m_komp")
                 df_m_sub = load_table("rab_m_subkomp")
                 df_m_akun = load_table("rab_m_akun")
                 
-                # 1. KRO
                 for kro_val in df_edit['KRO'].unique():
                     if kro_val != "-" and (df_m_kro.empty or kro_val not in df_m_kro['KRO'].values):
                         df_m_kro = pd.concat([df_m_kro, pd.DataFrame([{"KRO": kro_val, "Sumber_Dana": sumber_dana}])], ignore_index=True)
                 save_table(df_m_kro, "rab_m_kro")
                 
-                # 2. RO
                 ro_unik = df_edit[['KRO', 'RO']].drop_duplicates()
                 for _, r in ro_unik.iterrows():
                     if r['RO'] != "-" and (df_m_ro.empty or r['RO'] not in df_m_ro['RO'].values):
                         df_m_ro = pd.concat([df_m_ro, pd.DataFrame([{"KRO": r['KRO'], "RO": r['RO'], "Sumber_Dana": sumber_dana}])], ignore_index=True)
                 save_table(df_m_ro, "rab_m_ro")
 
-                # 3. Komponen
                 komp_unik = df_edit[['RO', 'Komponen']].drop_duplicates()
                 for _, r in komp_unik.iterrows():
                     if r['Komponen'] != "-" and (df_m_komp.empty or r['Komponen'] not in df_m_komp['Komponen'].values):
                         df_m_komp = pd.concat([df_m_komp, pd.DataFrame([{"RO": r['RO'], "Komponen": r['Komponen'], "Sumber_Dana": sumber_dana}])], ignore_index=True)
                 save_table(df_m_komp, "rab_m_komp")
 
-                # 4. Sub Komponen & Akun
                 sub_unik = df_edit[['Komponen', 'Sub_Komponen']].drop_duplicates()
                 for _, r in sub_unik.iterrows():
                     if r['Sub_Komponen'] != "-" and (df_m_sub.empty or r['Sub_Komponen'] not in df_m_sub['Sub_Komponen'].values):
@@ -274,7 +282,6 @@ def show_page():
                     df_m_akun = pd.concat([df_m_akun, pd.DataFrame(akun_baru_list)], ignore_index=True)
                     save_table(df_m_akun, "rab_m_akun")
 
-                # --- INJEKSI KE RAB_UTAMA & RAB_DETAIL ---
                 df_rab_utama = load_table("rab_utama")
                 df_rab_detail = load_table("rab_detail")
                 
@@ -285,7 +292,6 @@ def show_page():
                     df_keg_details = df_edit[df_edit['Kegiatan'] == keg_name].copy()
                     total_alokasi = df_keg_details['Total_Biaya'].sum()
                     
-                    # Ambil hirarki dari baris pertama untuk kegiatan ini
                     kro_v = df_keg_details['KRO'].iloc[0]
                     ro_v = df_keg_details['RO'].iloc[0]
                     komp_v = df_keg_details['Komponen'].iloc[0]
@@ -310,5 +316,5 @@ def show_page():
                 save_table(df_rab_detail, "rab_detail")
                 
                 st.session_state.ekstrak_result = pd.DataFrame() 
-                st.success("🎉 Hirarki Master Data dan Dokumen RKAKL berhasil diinjeksi dengan sempurna!")
+                st.success("🎉 Dokumen RKAKL berhasil diinjeksi dengan sempurna!")
                 st.rerun()
