@@ -716,7 +716,6 @@ def show_page():
         else:
             st.subheader("📂 Arsip & Manajemen Versi")
             
-            # --- PENAMBAHAN FILTER SUMBER DANA ---
             col_a1, col_a2 = st.columns(2)
             versi_list_aktif = sorted(df_utama_thn['Versi_RAB'].unique())
             pilih_v_arsip = col_a1.selectbox("1. Pilih Versi (Untuk Difilter):", versi_list_aktif)
@@ -724,9 +723,18 @@ def show_page():
             
             df_v_terpilih = df_utama_thn[(df_utama_thn['Versi_RAB'] == pilih_v_arsip) & (df_utama_thn['Sumber_Dana'] == sumber_dana_arsip)]
             
-            # PANEL STATUS VERSI GLOBAL
-            is_v_active = 1 if 1 in df_utama_thn[df_utama_thn['Versi_RAB'] == pilih_v_arsip]['Is_Active'].values else 0
-            if is_v_active == 1:
+            # PANEL STATUS VERSI GLOBAL & DETEKTOR KONFLIK MULTI-VERSI
+            active_versions = df_utama_thn[df_utama_thn['Is_Active'] == 1]['Versi_RAB'].unique()
+            is_v_active = 1 if pilih_v_arsip in active_versions else 0
+            
+            if len(active_versions) > 1:
+                st.error(f"🚨 **TERDETEKSI KONFLIK MULTI-VERSI:** Ada {len(active_versions)} versi yang berstatus Aktif secara bersamaan ({', '.join(active_versions)}). Ini menyebabkan data RKAKL Aktif Anda bertumpuk dan bocor!")
+                if st.button(f"🛠️ Perbaiki & Jadikan HANYA Versi '{pilih_v_arsip}' Sebagai Acuan Utama", type="primary", use_container_width=True):
+                    df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
+                    df_rab_utama.loc[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Versi_RAB'] == pilih_v_arsip), 'Is_Active'] = 1
+                    save_table(df_rab_utama, "rab_utama")
+                    st.rerun()
+            elif is_v_active == 1:
                 st.success(f"✅ **STATUS VERSI: AKTIF (FINAL ACUAN)**. Seluruh kegiatan pada versi '{pilih_v_arsip}' ditarik ke dalam Rekapitulasi Global RKAKL.")
             else:
                 st.warning(f"🗄️ **STATUS VERSI: ARSIP REVISI (TIDAK AKTIF)**. Versi ini disimpan sebagai rekaman sejarah anggaran.")
@@ -739,7 +747,6 @@ def show_page():
 
             st.markdown("---")
             
-            # --- FITUR BARU: HAPUS SELURUH DOKUMEN DALAM SATU VERSI ---
             with st.expander(f"⚠️ Zona Berbahaya: Hapus Seluruh Data Versi '{pilih_v_arsip}' ({sumber_dana_arsip})"):
                 st.error("Tindakan ini akan menghapus PERMANEN seluruh kegiatan dan rincian pada versi dan sumber dana yang dipilih. Berguna jika Anda salah mengekstrak dokumen ganda.")
                 konfirmasi_hapus = st.text_input(f"Ketik 'HAPUS' (huruf besar) untuk melanjutkan penghapusan {pilih_v_arsip} - {sumber_dana_arsip}:")
@@ -826,7 +833,6 @@ def show_page():
         dekan_rkakl = col_r2.text_input("Nama Dekan", value="Prof. Dr. M. Bahri Arifin, M.Hum.", key="dek_rkakl")
         nip_rkakl = col_r3.text_input("NIP Dekan", value="196211271989031004", key="nip_rkakl")
         
-        # --- PENAMBAHAN FILTER SUMBER DANA ---
         sumber_dana_rkakl = st.radio("Pilih Sumber Dana yang Akan Ditampilkan/Dicetak:", ["BOPTN", "PNBP"], key="sd_rkakl", horizontal=True)
         st.markdown("---")
         
@@ -864,7 +870,6 @@ def show_page():
             pilih_v1 = col_v1.selectbox("Pilih Versi Semula (Sebelum):", list_all_versions, index=list_all_versions.index(v1_def) if v1_def else 0)
             pilih_v2 = col_v2.selectbox("Pilih Versi Menjadi (Sesudah):", list_all_versions, index=list_all_versions.index(v2_def) if v2_def else 0)
             
-            # --- PENAMBAHAN FILTER SUMBER DANA ---
             sumber_dana_matrik = st.radio("Pilih Sumber Dana Matrik:", ["BOPTN", "PNBP"], key="sd_matrik", horizontal=True)
             
             if st.button("🔍 Generate Matrik Perbandingan", type="primary"):
@@ -917,7 +922,6 @@ def show_page():
             list_v_rapat = sorted(df_thn_rapat['Versi_RAB'].unique())
             versi_rapat = col_wr1.selectbox("Pilih Versi yang Akan Disimulasikan / Diedit Lintas Kegiatan:", list_v_rapat)
             
-            # --- PENAMBAHAN FILTER SUMBER DANA ---
             sumber_dana_rapat = col_wr2.radio("Sumber Dana:", ["BOPTN", "PNBP"], key="sd_rapat", horizontal=True)
 
             df_ur = df_thn_rapat[(df_thn_rapat['Versi_RAB'] == versi_rapat) & (df_thn_rapat['Sumber_Dana'] == sumber_dana_rapat)]
@@ -935,7 +939,7 @@ def show_page():
                 st.write(f"Tambahkan wadah kegiatan baru ke versi ini khusus untuk sumber dana {sumber_dana_rapat}.")
                 with st.form("form_suntik_kegiatan"):
                     s_kro = st.selectbox("KRO", df_m_kro[df_m_kro['Sumber_Dana'] == sumber_dana_rapat]['KRO'].tolist() or ["-"])
-                    s_ro = st.selectbox("RO", df_m_ro[df_m_ro['Sumber_Dana'] == sumber_dana_rapat]['RO'].tolist() or ["-"])
+                    s_ro = st.selectbox("RO", df_m_ro[df_m_ro['Sumber_Dana'] == sumber_dana_rapat]['RO'].ROlist() if not df_m_ro.empty else ["-"])
                     s_komp = st.selectbox("Komponen", df_m_komp[df_m_komp['Sumber_Dana'] == sumber_dana_rapat]['Komponen'].tolist() or ["-"])
                     s_sub = st.selectbox("Sub Komponen", df_m_subkomp[df_m_subkomp['Sumber_Dana'] == sumber_dana_rapat]['Sub_Komponen'].tolist() or ["-"])
                     s_keg = st.text_input("Nama Kegiatan Baru", placeholder="Cth: Honor Panitia Kegiatan Tambahan")
@@ -972,9 +976,7 @@ def show_page():
                 
                 c_kro, c_ro, c_komp, c_sub = "", "", "", ""
 
-                # LOOPING PEMBUATAN TABEL PER KEGIATAN DENGAN VISUAL ALA RKAKL
                 for _, row_keg in df_ur_sorted.iterrows():
-                    # --- VISUAL HEADER HIERARCHY ---
                     if row_keg['KRO'] != c_kro:
                         st.markdown(f"<div style='background-color:#d9e1f2; color:#000; padding:8px; font-weight:bold; margin-top:15px; border-radius:4px;'>🟦 KRO: {row_keg['KRO']}</div>", unsafe_allow_html=True)
                         c_kro = row_keg['KRO']; c_ro = ""
@@ -992,7 +994,6 @@ def show_page():
                     keg_name = row_keg['Kegiatan']
                     keg_code = kegiatan_code_map.get(keg_name, "0000")
                     
-                    # SETUP DATAFRAME UNTUK KEGIATAN INI SAJA
                     df_det_keg = df_dr[df_dr['ID_RAB'] == keg_id].copy()
                     df_det_keg['Target_Kegiatan'] = keg_name 
                     
@@ -1000,7 +1001,6 @@ def show_page():
                     if df_edit_view.empty:
                         df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
 
-                    # EXPANDER UNTUK EDITOR (WARNA HIJAU SEPERTI KEGIATAN DI RKAKL)
                     with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()}", expanded=True):
                         edited_keg = st.data_editor(
                             df_edit_view,
@@ -1019,7 +1019,6 @@ def show_page():
                             }
                         )
                         
-                        # HITUNG LIVE PAGU PER KEGIATAN
                         edited_keg['Vol_1'] = pd.to_numeric(edited_keg['Vol_1']).fillna(1)
                         edited_keg['Vol_2'] = pd.to_numeric(edited_keg['Vol_2']).fillna(1)
                         edited_keg.loc[edited_keg['Vol_2'] == 0, 'Vol_2'] = 1 
@@ -1031,7 +1030,6 @@ def show_page():
                         st.caption(f"**Total Anggaran Kegiatan Ini: Rp {format_rupiah(keg_total)}**")
                         all_valid_edits.append(edited_keg)
 
-                # RENDER HUD DI PLACEHOLDER PALING ATAS
                 with hud_placeholder.container():
                     st.markdown("### 🎛️ Panel Indikator Anggaran (Real-Time)")
                     col_h1, col_h2, col_h3 = st.columns(3)
@@ -1045,27 +1043,20 @@ def show_page():
                         col_h3.metric("🚨 DEFISIT (OVER BUDGET)", f"Rp {format_rupiah(selisih_dana)}")
                     st.markdown("<br>", unsafe_allow_html=True)
 
-                # -----------------------------------------------------------
-                # COMMIT BUTTON (KETOK PALU)
-                # -----------------------------------------------------------
                 st.markdown("---")
                 if st.button("💾 Ketok Palu: Simpan Hasil Revisi ke Database", type="primary", use_container_width=True):
                     edited_df_all = pd.concat(all_valid_edits)
                     valid_edits = edited_df_all[edited_df_all['Uraian'].str.strip() != ""].copy()
                     
-                    # Pemetaan mutasi kegiatan (Pindah Rumah)
                     valid_edits['ID_RAB'] = valid_edits['Target_Kegiatan'].map(keg_to_id)
                     valid_edits = valid_edits.dropna(subset=['ID_RAB'])
                     valid_edits['Total_Biaya'] = valid_edits['Vol_1'] * valid_edits['Vol_2'] * valid_edits['Harga_Satuan']
                     
-                    # 1. Hapus detail lama yang ada di versi ini
                     df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(keg_to_id.values())]
                     
-                    # 2. Masukkan detail yang baru
                     new_detail = valid_edits[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
                     df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
                     
-                    # 3. Update nominal 'Alokasi' di tabel utama
                     new_alokasi = valid_edits.groupby('ID_RAB')['Total_Biaya'].sum()
                     for id_r in keg_to_id.values():
                         tot_b = new_alokasi.get(id_r, 0)
