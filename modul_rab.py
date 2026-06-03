@@ -11,7 +11,7 @@ DB_URL = st.secrets["DB_URL"]
 engine = create_engine(DB_URL, pool_size=10, max_overflow=20)
 
 # =====================================================================
-# FUNGSI DATABASE & HELPER
+# FUNGSI DATABASE & PENGAMAN ANTI-CRASH (ROLLBACK OTOMATIS)
 # =====================================================================
 @st.cache_data(ttl=300)
 def load_table(table_name, default_cols):
@@ -34,20 +34,31 @@ def load_table(table_name, default_cols):
         return df
         
     except Exception as e:
+        engine.dispose() # SABUK PENGAMAN 1: Hancurkan koneksi yang macet/error
         err_str = str(e).lower()
         if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
             df = pd.DataFrame(columns=default_cols)
-            with engine.connect() as conn:
-                df.to_sql(table_name, conn, if_exists="append", index=False)
+            try:
+                with engine.begin() as conn: # SABUK PENGAMAN 2: Gunakan begin() untuk auto-rollback
+                    df.to_sql(table_name, conn, if_exists="append", index=False)
+            except:
+                engine.dispose()
             return df
         else:
-            st.error(f"Koneksi ke tabel {table_name} terganggu. Error: {e}")
+            st.warning(f"Sistem memulihkan koneksi terputus ke tabel {table_name}...")
             return pd.DataFrame(columns=default_cols)
 
 def save_table(df, table_name):
-    with engine.connect() as conn:
-        df.to_sql(table_name, conn, if_exists="replace", index=False)
-    st.cache_data.clear()
+    try:
+        # Gunakan engine.begin() agar jika gagal, koneksi otomatis melakukan ROLLBACK murni
+        with engine.begin() as conn:
+            df.to_sql(table_name, conn, if_exists="replace", index=False)
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        engine.dispose() # Hancurkan pool yang rusak agar pengguna bisa mencoba simpan lagi
+        st.error(f"🚨 Koneksi database sibuk/terputus. Koneksi telah di-reset otomatis. Silakan klik tombol Simpan sekali lagi! (Detail: {str(e)[:100]}...)")
+        return False
 
 def format_rupiah(x):
     try: return f"{float(x):,.0f}".replace(',', '.')
@@ -708,7 +719,6 @@ def show_page():
                 else:
                     df_det_edit = pd.DataFrame([{"Akun Belanja": opsi_akun[0], "Uraian Belanja": "", "Vol 1": 1, "Sat 1": "Unit", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
                 
-                # --- CASTING TIPE INT UNTUK EDITOR (MEMUNCULKAN PEMISAH RIBUAN) ---
                 df_det_edit['Harga Satuan'] = pd.to_numeric(df_det_edit['Harga Satuan'], errors='coerce').fillna(0).astype(int)
                 df_det_edit['Vol 1'] = pd.to_numeric(df_det_edit['Vol 1'], errors='coerce').fillna(1).astype(int)
                 df_det_edit['Vol 2'] = pd.to_numeric(df_det_edit['Vol 2'], errors='coerce').fillna(1).astype(int)
@@ -774,17 +784,18 @@ def show_page():
                             "Versi_RAB": rab_versi, "Is_Active": is_act, "Catatan": rab_catatan
                         }])
                         df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
-                        save_table(df_rab_utama, "rab_utama")
+                        save_result = save_table(df_rab_utama, "rab_utama")
                         
-                        valid_detail["ID_RAB"] = id_rab_baru
-                        valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
-                        valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
-                        
-                        df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
-                        save_table(df_rab_detail, "rab_detail")
-                        
-                        st.session_state.edit_rab_id = None
-                        st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
+                        if save_result:
+                            valid_detail["ID_RAB"] = id_rab_baru
+                            valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
+                            valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
+                            
+                            df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
+                            save_table(df_rab_detail, "rab_detail")
+                            
+                            st.session_state.edit_rab_id = None
+                            st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
 
     # -----------------------------------------------------------------
     # TAB 3: ARSIP & MANAJEMEN VERSI RAB
@@ -889,7 +900,6 @@ def show_page():
                 st.markdown(f"**Catatan Revisi:** {head_terpilih.get('Catatan', pd.Series(['-'])).iloc[0]}")
                 st.dataframe(df_view[["Kode Akun", "Nama Akun Belanja", "Uraian", "Volume & Satuan", "Harga_Satuan", "Total_Biaya"]].style.format({"Harga_Satuan": format_rupiah, "Total_Biaya": format_rupiah}), hide_index=True, use_container_width=True)
 
-                # --- TOGGLE PARAF UNTUK RAB SATUAN ---
                 st.markdown("#### 🖨️ Cetak Dokumen Satuan")
                 tampilkan_paraf_rab = st.checkbox("Tampilkan Tabel Paraf (Khusus Arsip Hardcopy Internal)", key=f"paraf_{id_rab_aktif}")
                 
@@ -918,7 +928,6 @@ def show_page():
         
         sumber_dana_rkakl = st.radio("Pilih Sumber Dana yang Akan Ditampilkan/Dicetak:", ["BOPTN", "PNBP"], key="sd_rkakl", horizontal=True)
         
-        # --- TOGGLE PARAF UNTUK RKAKL REKAP ---
         tampilkan_paraf_rkakl = st.checkbox("Tampilkan Tabel Paraf (Khusus Arsip Hardcopy Internal)", key="paraf_rkakl")
         st.markdown("---")
         
@@ -958,7 +967,6 @@ def show_page():
             
             sumber_dana_matrik = st.radio("Pilih Sumber Dana Matrik:", ["BOPTN", "PNBP"], key="sd_matrik", horizontal=True)
             
-            # --- TOGGLE PARAF UNTUK MATRIK ---
             tampilkan_paraf_matrik = st.checkbox("Tampilkan Tabel Paraf (Khusus Arsip Hardcopy Internal)", key="paraf_matrik")
             
             if st.button("🔍 Generate Matrik Perbandingan", type="primary"):
@@ -1001,7 +1009,7 @@ def show_page():
     # -----------------------------------------------------------------
     with tab_rapat:
         st.subheader("🛠️ War Room: Mode Edit Matrik Revisi")
-        st.info("Edit rincian belanja dengan nyaman berdasarkan hirarki RKAKL. Sisa dana akan terhitung otomatis di Panel atas.")
+        st.info("Edit rincian belanja dengan nyaman. Tombol Download Draf (Excel) bisa digunakan sebagai backup sebelum Anda menyimpan ke database.")
 
         df_thn_rapat = df_rab_utama[df_rab_utama['Tahun'] == tahun_aktif]
         if df_thn_rapat.empty:
@@ -1023,7 +1031,6 @@ def show_page():
             list_akun_raw = df_m_akun[df_m_akun['Sumber_Dana'] == sumber_dana_rapat]
             list_akun_rapat = (list_akun_raw['Account_Code'].astype(str) + " - " + list_akun_raw['Account_Name']).tolist() if not list_akun_raw.empty else ["-"]
 
-            # TOMBOL SUNTIK KEGIATAN MENDADAK
             with st.expander("⚡ Suntik Kegiatan Mendadak (Buat Wadah Baru)"):
                 st.write(f"Tambahkan wadah kegiatan baru ke versi ini khusus untuk sumber dana {sumber_dana_rapat}.")
                 with st.form("form_suntik_kegiatan"):
@@ -1085,19 +1092,16 @@ def show_page():
                     df_det_keg = df_dr[df_dr['ID_RAB'] == keg_id].copy()
                     df_det_keg['Target_Kegiatan'] = keg_name 
                     
-                    # --- MENGAMBIL TOTAL BIAYA AWAL UNTUK DITAMPILKAN DI HEADER EXPANDER ---
                     keg_total_awal = df_det_keg.get('Total_Biaya', pd.Series([0])).sum()
                     
                     df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
                     if df_edit_view.empty:
                         df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
 
-                    # --- CASTING TIPE INT UNTUK EDITOR (MEMUNCULKAN PEMISAH RIBUAN) ---
                     df_edit_view['Harga_Satuan'] = pd.to_numeric(df_edit_view['Harga_Satuan'], errors='coerce').fillna(0).astype(int)
                     df_edit_view['Vol_1'] = pd.to_numeric(df_edit_view['Vol_1'], errors='coerce').fillna(1).astype(int)
                     df_edit_view['Vol_2'] = pd.to_numeric(df_edit_view['Vol_2'], errors='coerce').fillna(1).astype(int)
 
-                    # --- MENYUNTIKKAN NOMINAL KE HEADER EXPANDER ---
                     with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()} (Rp {format_rupiah(keg_total_awal)})", expanded=True):
                         cat_val = str(row_keg.get('Catatan', '-'))
                         if cat_val.lower() == 'nan' or not cat_val: cat_val = "-"
@@ -1146,27 +1150,48 @@ def show_page():
                     st.markdown("<br>", unsafe_allow_html=True)
 
                 st.markdown("---")
-                if st.button("💾 Ketok Palu: Simpan Hasil Revisi ke Database", type="primary", use_container_width=True):
-                    edited_df_all = pd.concat(all_valid_edits)
-                    valid_edits = edited_df_all[edited_df_all['Uraian'].str.strip() != ""].copy()
-                    
-                    valid_edits['ID_RAB'] = valid_edits['Target_Kegiatan'].map(keg_to_id)
-                    valid_edits = valid_edits.dropna(subset=['ID_RAB'])
-                    valid_edits['Total_Biaya'] = valid_edits['Vol_1'] * valid_edits['Vol_2'] * valid_edits['Harga_Satuan']
-                    
-                    df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(keg_to_id.values())]
-                    
-                    new_detail = valid_edits[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
-                    df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
-                    
-                    new_alokasi = valid_edits.groupby('ID_RAB')['Total_Biaya'].sum()
-                    for id_r in keg_to_id.values():
-                        tot_b = new_alokasi.get(id_r, 0)
-                        df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Alokasi'] = tot_b
-                        c_baru = all_catatan_dict.get(id_r, "-")
-                        df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Catatan'] = c_baru
+                
+                # TOMBOL KETOK PALU DAN TOMBOL DOWNLOAD BACKUP DRAF
+                col_act1, col_act2 = st.columns([1, 1])
+                with col_act1:
+                    if st.button("💾 Ketok Palu: Simpan Hasil Revisi ke Database", type="primary", use_container_width=True):
+                        edited_df_all = pd.concat(all_valid_edits)
+                        valid_edits = edited_df_all[edited_df_all['Uraian'].str.strip() != ""].copy()
                         
-                    save_table(df_rab_detail, "rab_detail")
-                    save_table(df_rab_utama, "rab_utama")
-                    st.success("Perubahan & Catatan berhasil diketok palu dan disimpan permanen!")
-                    st.rerun()
+                        valid_edits['ID_RAB'] = valid_edits['Target_Kegiatan'].map(keg_to_id)
+                        valid_edits = valid_edits.dropna(subset=['ID_RAB'])
+                        valid_edits['Total_Biaya'] = valid_edits['Vol_1'] * valid_edits['Vol_2'] * valid_edits['Harga_Satuan']
+                        
+                        df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(keg_to_id.values())]
+                        
+                        new_detail = valid_edits[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
+                        df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
+                        
+                        new_alokasi = valid_edits.groupby('ID_RAB')['Total_Biaya'].sum()
+                        for id_r in keg_to_id.values():
+                            tot_b = new_alokasi.get(id_r, 0)
+                            df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Alokasi'] = tot_b
+                            c_baru = all_catatan_dict.get(id_r, "-")
+                            df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Catatan'] = c_baru
+                            
+                        save_success = save_table(df_rab_utama, "rab_utama")
+                        if save_success:
+                            save_table(df_rab_detail, "rab_detail")
+                            st.success("Perubahan & Catatan berhasil diketok palu dan disimpan permanen!")
+                            st.rerun()
+
+                with col_act2:
+                    if len(all_valid_edits) > 0:
+                        df_backup = pd.concat(all_valid_edits)
+                        valid_backup = df_backup[df_backup['Uraian'].str.strip() != ""].copy()
+                        if not valid_backup.empty:
+                            output_backup = BytesIO()
+                            with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
+                                valid_backup.to_excel(writer, index=False, sheet_name='Draf_Revisi')
+                            st.download_button(
+                                "📥 Download Draf Backup (Excel)", 
+                                data=output_backup.getvalue(), 
+                                file_name=f"Backup_Draf_Revisi_{versi_rapat}_{sumber_dana_rapat}.xlsx", 
+                                use_container_width=True,
+                                help="Klik ini untuk menyimpan data editor Anda ke Excel lokal sebagai perlindungan terhadap koneksi yang terputus."
+                            )
