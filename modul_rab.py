@@ -708,16 +708,21 @@ def show_page():
                 else:
                     df_det_edit = pd.DataFrame([{"Akun Belanja": opsi_akun[0], "Uraian Belanja": "", "Vol 1": 1, "Sat 1": "Unit", "Vol 2": 1, "Sat 2": "-", "Harga Satuan": 0}])
                 
+                # --- CASTING TIPE INT UNTUK EDITOR (MEMUNCULKAN PEMISAH RIBUAN) ---
+                df_det_edit['Harga Satuan'] = pd.to_numeric(df_det_edit['Harga Satuan'], errors='coerce').fillna(0).astype(int)
+                df_det_edit['Vol 1'] = pd.to_numeric(df_det_edit['Vol 1'], errors='coerce').fillna(1).astype(int)
+                df_det_edit['Vol 2'] = pd.to_numeric(df_det_edit['Vol 2'], errors='coerce').fillna(1).astype(int)
+                
                 df_input_detail = st.data_editor(
                     df_det_edit, num_rows="dynamic", use_container_width=True, hide_index=True, key="grid_buat_rab",
                     column_config={
                         "Akun Belanja": st.column_config.SelectboxColumn("Akun Belanja", options=opsi_akun, required=True),
                         "Uraian Belanja": st.column_config.TextColumn("Detail / Uraian", required=True),
-                        "Vol 1": st.column_config.NumberColumn("Vol 1", min_value=1, required=True),
+                        "Vol 1": st.column_config.NumberColumn("Vol 1", min_value=1, step=1, required=True, format="%d"),
                         "Sat 1": st.column_config.TextColumn("Sat 1", required=True),
-                        "Vol 2": st.column_config.NumberColumn("Vol 2", min_value=0),
+                        "Vol 2": st.column_config.NumberColumn("Vol 2", min_value=0, step=1, format="%d"),
                         "Sat 2": st.column_config.TextColumn("Sat 2 (Biarkan '-' jika tak ada)"),
-                        "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, required=True)
+                        "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=1, required=True, format="%d")
                     }
                 )
 
@@ -1080,11 +1085,20 @@ def show_page():
                     df_det_keg = df_dr[df_dr['ID_RAB'] == keg_id].copy()
                     df_det_keg['Target_Kegiatan'] = keg_name 
                     
+                    # --- MENGAMBIL TOTAL BIAYA AWAL UNTUK DITAMPILKAN DI HEADER EXPANDER ---
+                    keg_total_awal = df_det_keg.get('Total_Biaya', pd.Series([0])).sum()
+                    
                     df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
                     if df_edit_view.empty:
                         df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
 
-                    with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()}", expanded=True):
+                    # --- CASTING TIPE INT UNTUK EDITOR (MEMUNCULKAN PEMISAH RIBUAN) ---
+                    df_edit_view['Harga_Satuan'] = pd.to_numeric(df_edit_view['Harga_Satuan'], errors='coerce').fillna(0).astype(int)
+                    df_edit_view['Vol_1'] = pd.to_numeric(df_edit_view['Vol_1'], errors='coerce').fillna(1).astype(int)
+                    df_edit_view['Vol_2'] = pd.to_numeric(df_edit_view['Vol_2'], errors='coerce').fillna(1).astype(int)
+
+                    # --- MENYUNTIKKAN NOMINAL KE HEADER EXPANDER ---
+                    with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()} (Rp {format_rupiah(keg_total_awal)})", expanded=True):
                         cat_val = str(row_keg.get('Catatan', '-'))
                         if cat_val.lower() == 'nan' or not cat_val: cat_val = "-"
                         cat_input = st.text_input("📝 Catatan Revisi Kegiatan Ini:", value=cat_val, key=f"cat_{keg_id}")
@@ -1099,11 +1113,11 @@ def show_page():
                                 "Target_Kegiatan": st.column_config.SelectboxColumn("Pindah Ke Kegiatan", options=list_keg_rapat, required=True),
                                 "Akun_Belanja": st.column_config.SelectboxColumn("Akun Belanja", options=list_akun_rapat, required=True),
                                 "Uraian": st.column_config.TextColumn("Uraian Detail Belanja", required=True),
-                                "Vol_1": st.column_config.NumberColumn("Vol 1", min_value=0),
+                                "Vol_1": st.column_config.NumberColumn("Vol 1", min_value=0, step=1, format="%d"),
                                 "Sat_1": st.column_config.TextColumn("Sat 1"),
-                                "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0),
+                                "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0, step=1, format="%d"),
                                 "Sat_2": st.column_config.TextColumn("Sat 2"),
-                                "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0),
+                                "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=1, format="%d"),
                             }
                         )
                         
