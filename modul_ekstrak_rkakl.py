@@ -76,7 +76,7 @@ def parse_pdf_rkakl(file_bytes):
         for g in garbage_phrases:
             b_text = re.sub(g, "", b_text, flags=re.IGNORECASE)
 
-        clean_text = re.sub(r'\b(BOPTN|PNBP)\b', '', b_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\b(BOPTN|PNBP|BLU)\b', '', b_text, flags=re.IGNORECASE)
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         
         vol, hrg, tot, matched_str = extract_vht(clean_text)
