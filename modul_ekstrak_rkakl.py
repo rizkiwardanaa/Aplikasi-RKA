@@ -48,7 +48,7 @@ def extract_vht(text):
             
     return None, None, None, None
 
-# --- MESIN PISAU PYTHON ---
+# --- MESIN PISAU PYTHON (LEAK-PROOF PARSER) ---
 def parse_pdf_rkakl(file_bytes):
     text = ""
     with pdfplumber.open(file_bytes) as pdf:
@@ -61,21 +61,35 @@ def parse_pdf_rkakl(file_bytes):
     extracted_data = []
     debug_logs = []
     
-    curr_kro, curr_ro, curr_komp, curr_subkomp = "-", "-", "-", "-"
-    curr_keg_name, curr_akun_code, curr_akun_name = "Kegiatan Default", "000000", "Akun Tidak Dikenal"
+    # State Memory untuk Hirarki
+    curr_kro = "-"
+    curr_ro = "-"
+    curr_komp = "-"
+    curr_subkomp = "-"
+    curr_keg_name = "Kegiatan Default"
+    curr_akun_code = "000000"
+    curr_akun_name = "Akun Tidak Dikenal"
     
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
         garbage_phrases = [
-            r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
-            r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
-            r"\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)", r"TOTAL\s+[\d\.,]+",
-            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+", r"Dekan,", r"Prof\.\s+Dr\..*", r"NIP\.\s*[\d-]+"
+            r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)",
+            r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
+            r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)",
+            r"TAHUN\s+SUMBER",
+            r"TARGET",
+            r"\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)",
+            r"TOTAL\s+[\d\.,]+",
+            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+",
+            r"Dekan,",
+            r"Prof\.\s+Dr\..*",
+            r"NIP\.\s*[\d-]+"
         ]
         for g in garbage_phrases:
             b_text = re.sub(g, "", b_text, flags=re.IGNORECASE)
 
+        # PATCH: Filter BLU diaktifkan
         clean_text = re.sub(r'\b(BOPTN|PNBP|BLU)\b', '', b_text, flags=re.IGNORECASE)
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         
@@ -150,7 +164,8 @@ def parse_pdf_rkakl(file_bytes):
         match_kode = re.match(r"^([^\s]+)\s+(.*)", line)
         if match_kode:
             kode = match_kode.group(1)
-            desc = re.sub(r"[\d\.,]+\s*(BOPTN|PNBP)?$", "", match_kode.group(2)).strip()
+            # PATCH: Filter BLU diaktifkan untuk Akun
+            desc = re.sub(r"[\d\.,]+\s*(BOPTN|PNBP|BLU)?$", "", match_kode.group(2), flags=re.IGNORECASE).strip()
             
             is_valid_kode = False
             if re.match(r"^\d{6}$", kode): is_valid_kode = True
@@ -178,7 +193,8 @@ def parse_pdf_rkakl(file_bytes):
                     curr_ro = f"{kode} - {desc}"
                 continue
 
-        if line.startswith("-"):
+        # PATCH: Filter membaca kurung siku sebagai item list
+        if line.startswith("-") or line.startswith("["):
             flush_buffer() 
             buffer_text = line
         elif buffer_text:
@@ -206,7 +222,7 @@ def show_page():
         st.subheader("1. Setup Target Injeksi")
         col1, col2, col3 = st.columns(3)
         thn_target = col1.text_input("Tahun Anggaran", value=str(datetime.now().year + 1))
-        ver_target = col2.selectbox("Versi RKA", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3"])
+        ver_target = col2.selectbox("Versi RKA", ["Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8"])
         sumber_dana = col3.radio("Sumber Dana", ["BOPTN", "PNBP"], horizontal=True)
 
         file_pdf = st.file_uploader("2. Unggah Dokumen PDF RKAKL", type=['pdf'])
@@ -234,7 +250,7 @@ def show_page():
     if not st.session_state.ekstrak_result.empty:
         st.markdown("---")
         st.subheader("3. Ruang Karantina (Preview Data)")
-        st.info("Periksa hasil bacaan mesin di bawah ini. Tidak akan ada lagi rincian yang terduplikasi secara gaib.")
+        st.info("Periksa hasil bacaan mesin di bawah ini. Nama Akun sekarang sudah bersih dari ekstensi angka.")
         
         cols_order = ['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan', 'Akun_Code', 'Akun_Name', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']
         df_display = st.session_state.ekstrak_result[cols_order]
@@ -287,7 +303,6 @@ def show_page():
                 df_rab_utama = load_table("rab_utama")
                 df_rab_detail = load_table("rab_detail")
                 
-                # Cek versi aktif yang sudah ada agar tidak menimpa ganda
                 active_vs = df_rab_utama[(df_rab_utama['Tahun'] == thn_target) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                 is_act = 1 if len(active_vs) == 0 or ver_target in active_vs else 0
 
@@ -309,7 +324,7 @@ def show_page():
                         "Sumber_Dana": sumber_dana, "KRO": kro_v, "RO": ro_v, "Komponen": komp_v, "Sub_Komponen": sub_v,
                         "Kegiatan": keg_name, "Sasaran": "-", "Volume": 1, "Satuan": "Layanan", "Alokasi": total_alokasi,
                         "Jabatan": "Dekan", "Nama_Pejabat": "-", "NIP_Pejabat": "-",
-                        "Versi_RAB": ver_target, "Is_Active": is_act # LOGIKA AKTIF DIPERBAIKI DI SINI
+                        "Versi_RAB": ver_target, "Is_Active": is_act
                     }])
                     df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
                     
