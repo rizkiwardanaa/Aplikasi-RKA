@@ -525,6 +525,14 @@ def generate_rkakl_html(df_utama, df_detail, kegiatan_code_map, tahun, tgl_cetak
 # MODUL UTAMA MANAJEMEN HALAMAN
 # =====================================================================
 def show_page():
+    # --- INISIALISASI SESSION STATE UNTUK DRAF MEMORI ---
+    if 'war_room_drafts' not in st.session_state:
+        st.session_state['war_room_drafts'] = {}
+    if 'war_room_cats' not in st.session_state:
+        st.session_state['war_room_cats'] = {}
+    if 'war_room_view' not in st.session_state:
+        st.session_state['war_room_view'] = ""
+        
     # 1. Load Data
     df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
     df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
@@ -1027,6 +1035,13 @@ def show_page():
             
             sumber_dana_rapat = col_wr2.radio("Sumber Dana:", ["BOPTN", "PNBP"], key="sd_rapat", horizontal=True)
 
+            # --- LOGIKA PENYELAMAT DRAF CACHE ---
+            current_view = f"{versi_rapat}_{sumber_dana_rapat}"
+            if 'war_room_view' not in st.session_state or st.session_state['war_room_view'] != current_view:
+                st.session_state['war_room_drafts'] = {}
+                st.session_state['war_room_cats'] = {}
+                st.session_state['war_room_view'] = current_view
+
             df_ur = df_thn_rapat[(df_thn_rapat['Versi_RAB'] == versi_rapat) & (df_thn_rapat['Sumber_Dana'] == sumber_dana_rapat)]
             df_dr = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_ur['ID_RAB'])]
             pagu_awal = df_ur['Alokasi'].sum() if not df_ur.empty else 0
@@ -1103,22 +1118,34 @@ def show_page():
                     
                     keg_total_awal = df_det_keg.get('Total_Biaya', pd.Series([0])).sum()
                     
-                    df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
-                    if df_edit_view.empty:
-                        df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
+                    # MEMUAT DARI DB HANYA JIKA DRAF KOSONG
+                    if keg_id not in st.session_state['war_room_drafts']:
+                        df_edit_view = df_det_keg[['Target_Kegiatan', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan']].copy()
+                        if df_edit_view.empty:
+                            df_edit_view = pd.DataFrame([{"Target_Kegiatan": keg_name, "Akun_Belanja": list_akun_rapat[0] if list_akun_rapat else "-", "Uraian": "", "Vol_1": 1, "Sat_1": "Unit", "Vol_2": 1, "Sat_2": "-", "Harga_Satuan": 0}])
 
-                    df_edit_view['Harga_Satuan'] = pd.to_numeric(df_edit_view['Harga_Satuan'], errors='coerce').fillna(0).astype(int)
-                    df_edit_view['Vol_1'] = pd.to_numeric(df_edit_view['Vol_1'], errors='coerce').fillna(1).astype(int)
-                    df_edit_view['Vol_2'] = pd.to_numeric(df_edit_view['Vol_2'], errors='coerce').fillna(1).astype(int)
+                        df_edit_view['Harga_Satuan'] = pd.to_numeric(df_edit_view['Harga_Satuan'], errors='coerce').fillna(0).astype(int)
+                        df_edit_view['Vol_1'] = pd.to_numeric(df_edit_view['Vol_1'], errors='coerce').fillna(1).astype(int)
+                        df_edit_view['Vol_2'] = pd.to_numeric(df_edit_view['Vol_2'], errors='coerce').fillna(1).astype(int)
+                        
+                        st.session_state['war_room_drafts'][keg_id] = df_edit_view
+
+                    # MEMUAT CATATAN DARI DB HANYA JIKA DRAF KOSONG
+                    if keg_id not in st.session_state['war_room_cats']:
+                        cat_val_db = str(row_keg.get('Catatan', '-'))
+                        if cat_val_db.lower() == 'nan' or not cat_val_db: cat_val_db = "-"
+                        st.session_state['war_room_cats'][keg_id] = cat_val_db
 
                     with st.expander(f"🟢 KEGIATAN: {keg_code} - {keg_name.title()} (Rp {format_rupiah(keg_total_awal)})", expanded=True):
-                        cat_val = str(row_keg.get('Catatan', '-'))
-                        if cat_val.lower() == 'nan' or not cat_val: cat_val = "-"
-                        cat_input = st.text_input("📝 Catatan Revisi Kegiatan Ini:", value=cat_val, key=f"cat_{keg_id}")
-                        all_catatan_dict[keg_id] = cat_input.strip() if cat_input.strip() else "-"
                         
+                        # CATATAN REVISI DIAMBIL DARI DRAF SESSION STATE
+                        cat_input = st.text_input("📝 Catatan Revisi Kegiatan Ini:", value=st.session_state['war_room_cats'][keg_id], key=f"cat_{keg_id}")
+                        st.session_state['war_room_cats'][keg_id] = cat_input.strip() if cat_input.strip() else "-"
+                        all_catatan_dict[keg_id] = st.session_state['war_room_cats'][keg_id]
+                        
+                        # TABEL DIAMBIL DARI DRAF SESSION STATE
                         edited_keg = st.data_editor(
-                            df_edit_view,
+                            st.session_state['war_room_drafts'][keg_id],
                             num_rows="dynamic",
                             use_container_width=True,
                             key=f"ed_{keg_id}",
@@ -1133,6 +1160,9 @@ def show_page():
                                 "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=1, format="%d"),
                             }
                         )
+                        
+                        # MENYIMPAN EDITS KE DALAM DRAF SESSION STATE AGAR TIDAK HILANG SAAT RELOAD
+                        st.session_state['war_room_drafts'][keg_id] = edited_keg.copy()
                         
                         edited_keg['Vol_1'] = pd.to_numeric(edited_keg['Vol_1']).fillna(1)
                         edited_keg['Vol_2'] = pd.to_numeric(edited_keg['Vol_2']).fillna(1)
@@ -1185,6 +1215,9 @@ def show_page():
                         save_success = save_table(df_rab_utama, "rab_utama")
                         if save_success:
                             save_table(df_rab_detail, "rab_detail")
+                            # HAPUS DRAF SETELAH SUKSES SIMPAN KE DATABASE
+                            st.session_state['war_room_drafts'].clear()
+                            st.session_state['war_room_cats'].clear()
                             st.success("Perubahan & Catatan berhasil diketok palu dan disimpan permanen!")
                             st.rerun()
 
