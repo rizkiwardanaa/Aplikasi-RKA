@@ -12,18 +12,38 @@ except ImportError:
 
 # --- KONEKSI DATABASE ---
 DB_URL = st.secrets["DB_URL"]
-engine = create_engine(DB_URL, pool_size=5, max_overflow=10)
+engine = create_engine(DB_URL, pool_size=10, max_overflow=20)
 
+# --- FUNGSI DATABASE ANTI-CRASH ---
+@st.cache_data(ttl=300)
 def load_table(table_name):
-    try:
-        return pd.read_sql(f"SELECT * FROM {table_name}", engine)
-    except:
-        return pd.DataFrame()
+    for attempt in range(2):
+        try:
+            with engine.connect() as conn:
+                df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+            return df
+        except Exception as e:
+            engine.dispose()
+            if attempt == 1:
+                return pd.DataFrame()
 
 def save_table(df, table_name):
-    with engine.connect() as conn:
-        df.to_sql(table_name, conn, if_exists="replace", index=False)
-    st.cache_data.clear()
+    try:
+        with engine.begin() as conn:
+            df.to_sql(table_name, conn, if_exists="replace", index=False)
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        engine.dispose()
+        st.error(f"🚨 Koneksi database sibuk saat menyimpan {table_name}. Silakan coba lagi! Detail: {str(e)[:100]}")
+        return False
+
+# --- FUNGSI PEMISAH KODE UNTUK AUTO-HEAL ---
+def split_kd(teks):
+    s = str(teks).strip()
+    if " - " in s:
+        return s.split(" - ", 1)[0].strip()
+    return s
 
 # --- FUNGSI VERIFIKASI MATEMATIKA (V * H = T) ---
 def extract_vht(text):
@@ -164,7 +184,6 @@ def parse_pdf_rkakl(file_bytes):
         match_kode = re.match(r"^([^\s]+)\s+(.*)", line)
         if match_kode:
             kode = match_kode.group(1)
-            # PATCH: Filter BLU diaktifkan untuk Akun
             desc = re.sub(r"[\d\.,]+\s*(BOPTN|PNBP|BLU)?$", "", match_kode.group(2), flags=re.IGNORECASE).strip()
             
             is_valid_kode = False
@@ -193,7 +212,6 @@ def parse_pdf_rkakl(file_bytes):
                     curr_ro = f"{kode} - {desc}"
                 continue
 
-        # PATCH: Filter membaca kurung siku sebagai item list
         if line.startswith("-") or line.startswith("["):
             flush_buffer() 
             buffer_text = line
@@ -211,7 +229,7 @@ def parse_pdf_rkakl(file_bytes):
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. Sistem ini dilengkapi fitur Anti-Bocor Halaman dan Vakum Duplikat.")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. Dilengkapi fitur Auto-Heal Master untuk mengatasi duplikasi pergantian nama kode.")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -258,51 +276,143 @@ def show_page():
         df_edit = st.data_editor(df_display, num_rows="dynamic", use_container_width=True, height=400)
 
         if st.button("💾 Konfirmasi & Simpan Permanen ke Database", type="primary", use_container_width=True):
-            with st.spinner("Menyuntikkan data & Melakukan Auto-Heal Master..."):
+            with st.spinner("Menyuntikkan data, Membersihkan Duplikat Master, & Melakukan Auto-Heal..."):
                 df_m_kro = load_table("rab_m_kro")
                 df_m_ro = load_table("rab_m_ro")
                 df_m_komp = load_table("rab_m_komp")
                 df_m_sub = load_table("rab_m_subkomp")
                 df_m_akun = load_table("rab_m_akun")
-                
-                for kro_val in df_edit['KRO'].unique():
-                    if kro_val != "-" and (df_m_kro.empty or kro_val not in df_m_kro['KRO'].values):
-                        df_m_kro = pd.concat([df_m_kro, pd.DataFrame([{"KRO": kro_val, "Sumber_Dana": sumber_dana}])], ignore_index=True)
-                save_table(df_m_kro, "rab_m_kro")
-                
-                ro_unik = df_edit[['KRO', 'RO']].drop_duplicates()
-                for _, r in ro_unik.iterrows():
-                    if r['RO'] != "-" and (df_m_ro.empty or r['RO'] not in df_m_ro['RO'].values):
-                        df_m_ro = pd.concat([df_m_ro, pd.DataFrame([{"KRO": r['KRO'], "RO": r['RO'], "Sumber_Dana": sumber_dana}])], ignore_index=True)
-                save_table(df_m_ro, "rab_m_ro")
-
-                komp_unik = df_edit[['RO', 'Komponen']].drop_duplicates()
-                for _, r in komp_unik.iterrows():
-                    if r['Komponen'] != "-" and (df_m_komp.empty or r['Komponen'] not in df_m_komp['Komponen'].values):
-                        df_m_komp = pd.concat([df_m_komp, pd.DataFrame([{"RO": r['RO'], "Komponen": r['Komponen'], "Sumber_Dana": sumber_dana}])], ignore_index=True)
-                save_table(df_m_komp, "rab_m_komp")
-
-                sub_unik = df_edit[['Komponen', 'Sub_Komponen']].drop_duplicates()
-                for _, r in sub_unik.iterrows():
-                    if r['Sub_Komponen'] != "-" and (df_m_sub.empty or r['Sub_Komponen'] not in df_m_sub['Sub_Komponen'].values):
-                        df_m_sub = pd.concat([df_m_sub, pd.DataFrame([{"Komponen": r['Komponen'], "Sub_Komponen": r['Sub_Komponen'], "Sumber_Dana": sumber_dana}])], ignore_index=True)
-                save_table(df_m_sub, "rab_m_subkomp")
-
-                akun_unik = df_edit[['Sub_Komponen', 'Akun_Code', 'Akun_Name']].drop_duplicates()
-                akun_baru_list = []
-                for _, row in akun_unik.iterrows():
-                    if df_m_akun.empty or row['Akun_Code'] not in df_m_akun['Account_Code'].values:
-                        akun_baru_list.append({
-                            "Sub_Komponen": row['Sub_Komponen'], "Account_Code": row['Akun_Code'], 
-                            "Account_Name": row['Akun_Name'], "Sumber_Dana": sumber_dana
-                        })
-                if akun_baru_list:
-                    df_m_akun = pd.concat([df_m_akun, pd.DataFrame(akun_baru_list)], ignore_index=True)
-                    save_table(df_m_akun, "rab_m_akun")
-
                 df_rab_utama = load_table("rab_utama")
                 df_rab_detail = load_table("rab_detail")
                 
+                # --- AUTO HEAL 1: KRO ---
+                kro_updates = {}
+                new_kro = []
+                if not df_m_kro.empty and 'KRO' in df_m_kro.columns:
+                    for kro_val in df_edit['KRO'].unique():
+                        if kro_val == "-": continue
+                        k_code = split_kd(kro_val)
+                        mask = (df_m_kro['Sumber_Dana'] == sumber_dana) & (df_m_kro['KRO'].astype(str).str.startswith(k_code + " -"))
+                        existing = df_m_kro[mask]
+                        if not existing.empty:
+                            for old_v in existing['KRO'].unique():
+                                if old_v != kro_val: kro_updates[old_v] = kro_val
+                        else:
+                            new_kro.append({"KRO": kro_val, "Sumber_Dana": sumber_dana})
+                else:
+                    new_kro = [{"KRO": k, "Sumber_Dana": sumber_dana} for k in df_edit['KRO'].unique() if k != "-"]
+                
+                if kro_updates:
+                    df_m_kro['KRO'] = df_m_kro['KRO'].replace(kro_updates)
+                    if not df_m_ro.empty and 'KRO' in df_m_ro.columns: df_m_ro['KRO'] = df_m_ro['KRO'].replace(kro_updates)
+                    if not df_rab_utama.empty and 'KRO' in df_rab_utama.columns: df_rab_utama['KRO'] = df_rab_utama['KRO'].replace(kro_updates)
+                if new_kro: df_m_kro = pd.concat([df_m_kro, pd.DataFrame(new_kro)], ignore_index=True)
+                if not df_m_kro.empty: df_m_kro = df_m_kro.drop_duplicates(subset=['KRO', 'Sumber_Dana'], keep='last')
+
+                # --- AUTO HEAL 2: RO ---
+                ro_updates = {}
+                new_ro = []
+                if not df_m_ro.empty and 'RO' in df_m_ro.columns:
+                    for _, r in df_edit[['KRO', 'RO']].drop_duplicates().iterrows():
+                        if r['RO'] == "-": continue
+                        r_code = split_kd(r['RO'])
+                        mask = (df_m_ro['Sumber_Dana'] == sumber_dana) & (df_m_ro['RO'].astype(str).str.startswith(r_code + " -"))
+                        existing = df_m_ro[mask]
+                        if not existing.empty:
+                            for old_v in existing['RO'].unique():
+                                if old_v != r['RO']: ro_updates[old_v] = r['RO']
+                        else:
+                            new_ro.append({"KRO": r['KRO'], "RO": r['RO'], "Sumber_Dana": sumber_dana})
+                else:
+                    new_ro = [{"KRO": r['KRO'], "RO": r['RO'], "Sumber_Dana": sumber_dana} for _, r in df_edit[['KRO', 'RO']].drop_duplicates().iterrows() if r['RO'] != "-"]
+                    
+                if ro_updates:
+                    df_m_ro['RO'] = df_m_ro['RO'].replace(ro_updates)
+                    if not df_m_komp.empty and 'RO' in df_m_komp.columns: df_m_komp['RO'] = df_m_komp['RO'].replace(ro_updates)
+                    if not df_rab_utama.empty and 'RO' in df_rab_utama.columns: df_rab_utama['RO'] = df_rab_utama['RO'].replace(ro_updates)
+                if new_ro: df_m_ro = pd.concat([df_m_ro, pd.DataFrame(new_ro)], ignore_index=True)
+                if not df_m_ro.empty: df_m_ro = df_m_ro.drop_duplicates(subset=['RO', 'Sumber_Dana'], keep='last')
+
+                # --- AUTO HEAL 3: KOMPONEN ---
+                komp_updates = {}
+                new_komp = []
+                if not df_m_komp.empty and 'Komponen' in df_m_komp.columns:
+                    for _, r in df_edit[['RO', 'Komponen']].drop_duplicates().iterrows():
+                        if r['Komponen'] == "-": continue
+                        k_code = split_kd(r['Komponen'])
+                        mask = (df_m_komp['Sumber_Dana'] == sumber_dana) & (df_m_komp['Komponen'].astype(str).str.startswith(k_code + " -"))
+                        existing = df_m_komp[mask]
+                        if not existing.empty:
+                            for old_v in existing['Komponen'].unique():
+                                if old_v != r['Komponen']: komp_updates[old_v] = r['Komponen']
+                        else:
+                            new_komp.append({"RO": r['RO'], "Komponen": r['Komponen'], "Sumber_Dana": sumber_dana})
+                else:
+                    new_komp = [{"RO": r['RO'], "Komponen": r['Komponen'], "Sumber_Dana": sumber_dana} for _, r in df_edit[['RO', 'Komponen']].drop_duplicates().iterrows() if r['Komponen'] != "-"]
+
+                if komp_updates:
+                    df_m_komp['Komponen'] = df_m_komp['Komponen'].replace(komp_updates)
+                    if not df_m_sub.empty and 'Komponen' in df_m_sub.columns: df_m_sub['Komponen'] = df_m_sub['Komponen'].replace(komp_updates)
+                    if not df_rab_utama.empty and 'Komponen' in df_rab_utama.columns: df_rab_utama['Komponen'] = df_rab_utama['Komponen'].replace(komp_updates)
+                if new_komp: df_m_komp = pd.concat([df_m_komp, pd.DataFrame(new_komp)], ignore_index=True)
+                if not df_m_komp.empty: df_m_komp = df_m_komp.drop_duplicates(subset=['Komponen', 'Sumber_Dana'], keep='last')
+
+                # --- AUTO HEAL 4: SUB KOMPONEN ---
+                sub_updates = {}
+                new_sub = []
+                if not df_m_sub.empty and 'Sub_Komponen' in df_m_sub.columns:
+                    for _, r in df_edit[['Komponen', 'Sub_Komponen']].drop_duplicates().iterrows():
+                        if r['Sub_Komponen'] == "-": continue
+                        s_code = split_kd(r['Sub_Komponen'])
+                        mask = (df_m_sub['Sumber_Dana'] == sumber_dana) & (df_m_sub['Sub_Komponen'].astype(str).str.startswith(s_code + " -"))
+                        existing = df_m_sub[mask]
+                        if not existing.empty:
+                            for old_v in existing['Sub_Komponen'].unique():
+                                if old_v != r['Sub_Komponen']: sub_updates[old_v] = r['Sub_Komponen']
+                        else:
+                            new_sub.append({"Komponen": r['Komponen'], "Sub_Komponen": r['Sub_Komponen'], "Sumber_Dana": sumber_dana})
+                else:
+                    new_sub = [{"Komponen": r['Komponen'], "Sub_Komponen": r['Sub_Komponen'], "Sumber_Dana": sumber_dana} for _, r in df_edit[['Komponen', 'Sub_Komponen']].drop_duplicates().iterrows() if r['Sub_Komponen'] != "-"]
+
+                if sub_updates:
+                    df_m_sub['Sub_Komponen'] = df_m_sub['Sub_Komponen'].replace(sub_updates)
+                    if not df_m_akun.empty and 'Sub_Komponen' in df_m_akun.columns: df_m_akun['Sub_Komponen'] = df_m_akun['Sub_Komponen'].replace(sub_updates)
+                    if not df_rab_utama.empty and 'Sub_Komponen' in df_rab_utama.columns: df_rab_utama['Sub_Komponen'] = df_rab_utama['Sub_Komponen'].replace(sub_updates)
+                if new_sub: df_m_sub = pd.concat([df_m_sub, pd.DataFrame(new_sub)], ignore_index=True)
+                if not df_m_sub.empty: df_m_sub = df_m_sub.drop_duplicates(subset=['Sub_Komponen', 'Sumber_Dana'], keep='last')
+
+                # --- AUTO HEAL 5: AKUN ---
+                akun_updates = {}
+                new_akun = []
+                if not df_m_akun.empty and 'Account_Code' in df_m_akun.columns:
+                    for _, r in df_edit[['Sub_Komponen', 'Akun_Code', 'Akun_Name']].drop_duplicates().iterrows():
+                        mask = (df_m_akun['Sumber_Dana'] == sumber_dana) & (df_m_akun['Account_Code'] == r['Akun_Code'])
+                        existing = df_m_akun[mask]
+                        if not existing.empty:
+                            for idx, ex_r in existing.iterrows():
+                                if ex_r['Account_Name'] != r['Akun_Name']:
+                                    old_akun_str = f"{ex_r['Account_Code']} - {ex_r['Account_Name']}"
+                                    new_akun_str = f"{r['Akun_Code']} - {r['Akun_Name']}"
+                                    akun_updates[old_akun_str] = new_akun_str
+                                    df_m_akun.at[idx, 'Account_Name'] = r['Akun_Name']
+                        else:
+                            new_akun.append({"Sub_Komponen": r['Sub_Komponen'], "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana})
+                else:
+                    new_akun = [{"Sub_Komponen": r['Sub_Komponen'], "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana} for _, r in df_edit[['Sub_Komponen', 'Akun_Code', 'Akun_Name']].drop_duplicates().iterrows()]
+
+                if akun_updates and not df_rab_detail.empty and 'Akun_Belanja' in df_rab_detail.columns:
+                    df_rab_detail['Akun_Belanja'] = df_rab_detail['Akun_Belanja'].replace(akun_updates)
+                if new_akun: df_m_akun = pd.concat([df_m_akun, pd.DataFrame(new_akun)], ignore_index=True)
+                if not df_m_akun.empty: df_m_akun = df_m_akun.drop_duplicates(subset=['Account_Code', 'Sumber_Dana', 'Sub_Komponen'], keep='last')
+                
+                # SIMPAN SEMUA MASTER YANG SUDAH DI-HEAL
+                save_table(df_m_kro, "rab_m_kro")
+                save_table(df_m_ro, "rab_m_ro")
+                save_table(df_m_komp, "rab_m_komp")
+                save_table(df_m_sub, "rab_m_subkomp")
+                save_table(df_m_akun, "rab_m_akun")
+                
+                # SEKARANG SIMPAN DATA UTAMA (Mencegah Menimpa Diri Sendiri)
                 active_vs = df_rab_utama[(df_rab_utama['Tahun'] == thn_target) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                 is_act = 1 if len(active_vs) == 0 or ver_target in active_vs else 0
 
@@ -337,5 +447,5 @@ def show_page():
                 save_table(df_rab_detail, "rab_detail")
                 
                 st.session_state.ekstrak_result = pd.DataFrame() 
-                st.success("🎉 Dokumen RKAKL berhasil diinjeksi bersih tanpa merusak status aktif!")
+                st.success("🎉 Dokumen RKAKL berhasil diinjeksi. Seluruh struktur kode Master & Riwayat Kegiatan Anda telah sukses di-Heal secara otomatis!")
                 st.rerun()
