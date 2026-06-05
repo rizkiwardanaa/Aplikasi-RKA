@@ -112,18 +112,16 @@ def generate_narasi_tor_json(kegiatan, total_anggaran, sasaran, list_belanja, po
                 model = genai.GenerativeModel(nama_bersih)
                 respons = model.generate_content(prompt)
                 
-                teks_respons = respons.text.replace('```json', '').replace('```', '').strip()
+                teks_respons = respons.text.replace('```json', '').replace('
+```', '').strip()
                 hasil_json = json.loads(teks_respons)
                 
-                # Opsional: Memberitahu model mana yang akhirnya berhasil dipakai (berguna untuk pantauan)
                 st.toast(f"✅ Narasi berhasil digenerate menggunakan model: {nama_bersih}")
                 return hasil_json
                 
             except Exception as loop_err:
-                # Jika model ini limit atau error, sistem akan mengabaikannya dan lanjut ke iterasi model berikutnya
                 continue
                 
-        # Jika kode sampai di titik ini, berarti SEMUA model sudah dicoba dan semuanya limit/gagal
         st.error("❌ GAGAL: Semua model AI telah mencapai batas limit penggunaan (Quota Exceeded). Silakan coba lagi besok atau gunakan API Key cadangan.")
         return None
             
@@ -368,10 +366,20 @@ def show_page():
         df_keg_det = df_detail[df_detail['ID_RAB'] == df_keg_utama['ID_RAB']]
         tot_rp = df_keg_det['Total_Biaya'].sum()
         
-        st.info(f"**Sasaran:** {df_keg_utama['Sasaran']}\n\n**Total Pagu:** Rp {format_rupiah(tot_rp)}")
+        kro_code, kro_name = split_kode(df_keg_utama['KRO'])
+        ro_code, ro_name = split_kode(df_keg_utama['RO'])
+
+        # --- AUTO DETECT SASARAN KEGIATAN SESUAI KRO ---
+        sasaran_awal = df_keg_utama['Sasaran']
+        if str(sasaran_awal).strip() == "-" or not sasaran_awal:
+            sasaran_awal = f"Peningkatan {kro_name.strip('() ')}" if kro_name else ""
+
+        st.info(f"**Total Pagu Anggaran:** Rp {format_rupiah(tot_rp)}")
         
         st.markdown("---")
-        st.subheader("Informasi Operasional & Penanggung Jawab")
+        st.subheader("1. Setup Sasaran & Operasional")
+        
+        in_sasaran = st.text_area("🎯 Sasaran Kegiatan (Dideteksi otomatis dari DB, silakan sesuaikan jika perlu)", value=sasaran_awal)
         
         col1, col2, col3 = st.columns(3)
         in_ketua = col1.text_input("Nama Pejabat", value="Prof. Dr. M. Bahri Arifin, M.Hum.")
@@ -382,9 +390,6 @@ def show_page():
         
         in_poin = st.text_area("Catatan Latar Belakang untuk AI (Opsional)", placeholder="Ketik ide/alasan singkat mengapa kegiatan ini butuh dilaksanakan agar AI bisa merangkainya.")
 
-    kro_code, kro_name = split_kode(df_keg_utama['KRO'])
-    ro_code, ro_name = split_kode(df_keg_utama['RO'])
-    
     meta_tor = {
         'sumber_dana': df_keg_utama['Sumber_Dana'],
         'ro_code': ro_code,
@@ -392,7 +397,7 @@ def show_page():
         'sasaran_prog': f"Peningkatan {kro_name}",
         'ikp': f"Meningkatnya Kualitas {kro_name}",
         'kegiatan_induk': "7730. (Peningkatan Kualitas dan Kapasitas Perguruan Tinggi)",
-        'sasaran_keg': df_keg_utama['Sasaran'],
+        'sasaran_keg': in_sasaran,
         'ikk': "Meningkatnya Kualitas dan Kapasitas Perguruan Tinggi",
         'kro_teks': f"{kro_code}. ({kro_name})",
         'ind_kro': f"Meningkatnya Kualitas {ro_name}",
