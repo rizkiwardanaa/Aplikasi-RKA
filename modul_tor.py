@@ -371,7 +371,7 @@ def show_page():
         # --- AUTO DETECT SASARAN KEGIATAN SESUAI KRO ---
         sasaran_awal = df_keg_utama['Sasaran']
         if str(sasaran_awal).strip() == "-" or not sasaran_awal:
-            sasaran_awal = f"Peningkatan {kro_name.strip('() ')}" if kro_name else ""
+            sasaran_awal = f"Peningkatan Kualitas {kro_name.strip('() ')}" if kro_name else ""
 
         st.info(f"**Total Pagu Anggaran:** Rp {format_rupiah(tot_rp)}")
         
