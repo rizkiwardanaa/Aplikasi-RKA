@@ -11,11 +11,21 @@ DB_URL = st.secrets["DB_URL"]
 engine = create_engine(DB_URL, pool_size=10, max_overflow=20)
 
 # =====================================================================
-# FUNGSI DATABASE: MATA-MATA TAHUN & PENGAMAN ANTI-CRASH
+# FUNGSI DATABASE: MATA-MATA TAHUN, PENGAMAN & CCTV AUDIT
 # =====================================================================
+def log_audit(aksi, detail):
+    """CCTV Rahasia: Mencatat setiap aktivitas penting ke dalam database"""
+    try:
+        user = st.session_state.get("nama_user", "Sistem/Unknown")
+        waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        df_log = pd.DataFrame([{"Waktu": waktu, "User": user, "Aksi": aksi, "Detail": detail}])
+        with engine.begin() as conn:
+            df_log.to_sql("rab_logs", conn, if_exists="append", index=False)
+    except Exception:
+        pass # CCTV tidak boleh membuat aplikasi berhenti jika gagal
+
 @st.cache_data(ttl=300)
 def get_available_years():
-    # Mengambil deretan angka tahun saja, super cepat!
     try:
         with engine.connect() as conn:
             df = pd.read_sql('SELECT DISTINCT "Tahun" FROM rab_utama', conn)
@@ -31,7 +41,6 @@ def load_table(table_name, default_cols, where_clause=""):
     for attempt in range(2):
         try:
             with engine.connect() as conn:
-                # Modifikasi agar bisa memfilter spesifik dari database langsung
                 df = pd.read_sql(f"SELECT * FROM {table_name} {where_clause}", conn)
                 
             for col in default_cols:
@@ -66,7 +75,6 @@ def load_table(table_name, default_cols, where_clause=""):
                 st.stop()
 
 def save_table(df, table_name):
-    # Hanya untuk Data Master
     try:
         with engine.begin() as conn:
             df.to_sql(table_name, conn, if_exists="replace", index=False)
@@ -78,7 +86,6 @@ def save_table(df, table_name):
         return False
 
 def update_rab_tahun(df_u_part, df_d_part, tahun):
-    # Fungsi PINTAR: Menjahit data yang diedit dengan data tahun lawas agar tidak saling timpa
     try:
         try:
             with engine.connect() as conn:
@@ -640,6 +647,7 @@ def show_page():
                             if 'Sub_Komponen' in xls_master: save_table(xls_master['Sub_Komponen'], "rab_m_subkomp")
                             if 'Akun' in xls_master: save_table(xls_master['Akun'], "rab_m_akun")
                             if 'Pejabat' in xls_master: save_table(xls_master['Pejabat'], "rab_m_pejabat")
+                            log_audit("IMPORT MASTER", "Melakukan restore master data via Excel")
                             st.success("Data Master berhasil di-import!"); st.rerun()
                         except Exception as e: st.error(f"Gagal memproses file: {e}")
 
@@ -794,7 +802,8 @@ def show_page():
                         "Sat 1": st.column_config.TextColumn("Sat 1", required=True),
                         "Vol 2": st.column_config.NumberColumn("Vol 2", min_value=0, step=1, format="%d"),
                         "Sat 2": st.column_config.TextColumn("Sat 2 (Biarkan '-' jika tak ada)"),
-                        "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=1, required=True, format="%d")
+                        # FORMAT HARGA SATUAN AGAR ADA PEMISAH RIBUAN (PELINDUNG MATA)
+                        "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=10000, required=True, format="%,.0f")
                     }
                 )
 
@@ -853,10 +862,13 @@ def show_page():
                         df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
                         
                         # Menggunakan Auto-Stitch Saving
-                        update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                        save_success = update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                         
-                        st.session_state.edit_rab_id = None
-                        st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
+                        if save_success:
+                            # TRIGGER CCTV AUDIT
+                            log_audit("BUAT/EDIT RAB", f"Menyimpan kegiatan '{rab_kegiatan.title()}' untuk Versi '{rab_versi}' ({sumber_buat}) dengan Pagu Rp {format_rupiah(total_rab_live)}")
+                            st.session_state.edit_rab_id = None
+                            st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
 
     # -----------------------------------------------------------------
     # TAB 3: ARSIP & MANAJEMEN VERSI RAB
@@ -887,6 +899,7 @@ def show_page():
                     df_rab_utama['Is_Active'] = 0
                     df_rab_utama.loc[df_rab_utama['Versi_RAB'] == pilih_v_arsip, 'Is_Active'] = 1
                     update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                    log_audit("PERBAIKI VERSI", f"Memperbaiki konflik versi dan mengaktifkan versi '{pilih_v_arsip}'")
                     st.rerun()
             elif is_v_active == 1:
                 st.success(f"✅ **STATUS VERSI: AKTIF (FINAL ACUAN)**. Seluruh kegiatan pada versi '{pilih_v_arsip}' ditarik ke dalam Rekapitulasi Global RKAKL.")
@@ -896,6 +909,7 @@ def show_page():
                     df_rab_utama['Is_Active'] = 0
                     df_rab_utama.loc[df_rab_utama['Versi_RAB'] == pilih_v_arsip, 'Is_Active'] = 1
                     update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                    log_audit("AKTIFKAN VERSI", f"Menjadikan versi '{pilih_v_arsip}' sebagai versi aktif")
                     st.toast(f"Versi {pilih_v_arsip} Berhasil Diaktifkan!")
                     st.rerun()
 
@@ -910,6 +924,7 @@ def show_page():
                         df_rab_utama = df_rab_utama[~df_rab_utama['ID_RAB'].isin(ids_to_delete)]
                         df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(ids_to_delete)]
                         update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                        log_audit("HAPUS VERSI", f"Menghapus permanen seluruh data versi '{pilih_v_arsip}' ({sumber_dana_arsip})")
                         st.success(f"Seluruh data versi {pilih_v_arsip} ({sumber_dana_arsip}) berhasil dihapus!")
                         st.rerun()
                     else:
@@ -938,6 +953,7 @@ def show_page():
                         df_rab_detail = pd.concat([df_rab_detail, det_keg_lama], ignore_index=True)
                         
                     update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                    log_audit("DUPLIKASI VERSI", f"Menyalin seluruh kegiatan versi '{pilih_v_arsip}' menjadi versi '{target_versi}'")
                     st.success(f"Berhasil menduplikasi ke {target_versi} dan versi tersebut langsung diaktifkan!"); st.rerun()
 
             if pilih_keg_arsip:
@@ -975,6 +991,7 @@ def show_page():
                         df_rab_utama = df_rab_utama[df_rab_utama["ID_RAB"] != id_rab_aktif]
                         df_rab_detail = df_rab_detail[df_rab_detail["ID_RAB"] != id_rab_aktif]
                         update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                        log_audit("HAPUS DOKUMEN", f"Menghapus dokumen kegiatan tunggal: '{pilih_keg_arsip}'")
                         st.rerun()
 
     # -----------------------------------------------------------------
@@ -1093,7 +1110,7 @@ def show_page():
 
             df_ur = df_thn_rapat[(df_thn_rapat['Versi_RAB'] == versi_rapat) & (df_thn_rapat['Sumber_Dana'] == sumber_dana_rapat)]
             df_dr = df_rab_detail[df_rab_detail['ID_RAB'].isin(df_ur['ID_RAB'])]
-            pagu_awal = df_ur['Alokasi'].sum() if not df_ur.empty else 0
+            pagu_awal_db = df_ur['Alokasi'].sum() if not df_ur.empty else 0
 
             keg_to_id = {row['Kegiatan']: row['ID_RAB'] for _, row in df_ur.iterrows()}
             list_keg_rapat = list(keg_to_id.keys()) if keg_to_id else ["-"]
@@ -1126,6 +1143,7 @@ def show_page():
                             }])
                             df_rab_utama = pd.concat([df_rab_utama, new_u], ignore_index=True)
                             update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                            log_audit("SUNTIK KEGIATAN", f"Menambahkan kegiatan baru '{s_keg.strip()}' di War Room versi '{versi_rapat}'")
                             st.success(f"Kegiatan {sumber_dana_rapat} berhasil disuntik!"); st.rerun()
 
             st.markdown("---")
@@ -1206,7 +1224,8 @@ def show_page():
                                 "Sat_1": st.column_config.TextColumn("Sat 1"),
                                 "Vol_2": st.column_config.NumberColumn("Vol 2", min_value=0, step=1, format="%d"),
                                 "Sat_2": st.column_config.TextColumn("Sat 2"),
-                                "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=1, format="%d"),
+                                # FORMAT HARGA SATUAN AGAR ADA PEMISAH RIBUAN (PELINDUNG MATA)
+                                "Harga_Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, step=50000, format="%,.0f"),
                             }
                         )
                         
@@ -1227,10 +1246,14 @@ def show_page():
                 with hud_placeholder.container():
                     st.markdown("### 🎛️ Panel Indikator Anggaran (Real-Time)")
                     col_h1, col_h2, col_h3 = st.columns(3)
-                    col_h1.metric("Pagu Awal Versi", f"Rp {format_rupiah(pagu_awal)}")
+                    
+                    # FITUR OVERRIDE PAGU AWAL
+                    pagu_awal_input = col_h1.number_input("Pagu Awal Versi (Bisa Diedit Manual)", value=int(pagu_awal_db), step=1000000)
+                    pagu_awal_efektif = pagu_awal_input
+                    
                     col_h2.metric("Total Draf Saat Ini", f"Rp {format_rupiah(pagu_live)}")
                     
-                    selisih_dana = pagu_awal - pagu_live
+                    selisih_dana = pagu_awal_efektif - pagu_live
                     if selisih_dana >= 0:
                         col_h3.metric("Keranjang Sisa Dana", f"Rp {format_rupiah(selisih_dana)}")
                     else:
@@ -1263,6 +1286,7 @@ def show_page():
                             
                         save_success = update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                         if save_success:
+                            log_audit("KETOK PALU REVISI", f"Menyimpan draf revisi War Room untuk versi '{versi_rapat}' ({sumber_dana_rapat}). Total Draf: Rp {format_rupiah(pagu_live)}")
                             # HAPUS DRAF SETELAH SUKSES SIMPAN KE DATABASE
                             st.session_state['war_room_drafts'].clear()
                             st.session_state['war_room_cats'].clear()
@@ -1284,5 +1308,6 @@ def show_page():
                                 use_container_width=True,
                                 help="Klik ini untuk menyimpan data editor Anda ke Excel lokal sebagai perlindungan terhadap koneksi yang terputus."
                             )
-# (Letakkan di baris paling akhir file, jangan diberi indentasi/spasi di depannya)
+
+# PASTIKAN BARIS INI ADA DI PALING BAWAH FILE:
 show_page()
