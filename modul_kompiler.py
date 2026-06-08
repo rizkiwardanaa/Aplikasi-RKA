@@ -431,3 +431,5 @@ def show_page():
                     col_pdf1, col_pdf2 = st.columns(2)
                     with col_pdf1: st.download_button("📑 PDF: Laporan Prodi (Web)", data=generate_html_report(df_ins_p, prodi_ins_sel, hidden=sembunyikan_nilai).encode('utf-8'), file_name=f"Cetak_{prodi_ins_sel}.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
                     with col_pdf2: st.download_button("📑 PDF: Laporan Fakultas (Web)", data=generate_html_report(df_usulan, "Seluruh Fakultas", hidden=sembunyikan_nilai).encode('utf-8'), file_name="Cetak_FIB_Semua.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
+# (Letakkan di baris paling akhir file, jangan diberi indentasi/spasi di depannya)
+show_page()
