@@ -1,11 +1,7 @@
 import streamlit as st
-import modul_kompiler
-import modul_rab
-import modul_tor  # Tambahan impor modul TOR pintar
-import modul_ekstrak_rkakl # Tambahan impor mesin pengekstraksi PDF
 
 # ==========================================
-# KONFIGURASI HALAMAN UTAMA
+# KONFIGURASI HALAMAN UTAMA (Harus Paling Atas)
 # ==========================================
 st.set_page_config(page_title="Sistem Perencanaan FIB", page_icon="📝", layout="wide")
 
@@ -25,6 +21,7 @@ USER_CREDENTIALS = {
 if "logged_in" not in st.session_state:
     st.session_state.update({"logged_in": False, "role": None, "nama_user": None, "username": None})
 
+# --- HALAMAN LOGIN ---
 if not st.session_state["logged_in"]:
     _, col_tengah, _ = st.columns([1, 2, 1])
     with col_tengah:
@@ -42,41 +39,30 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # ==========================================
-# SIDEBAR & MENU NAVIGASI (DINAMIS PER ROLE)
+# MULTIPAGE ROUTING & NAVIGATION (LAZY LOADING)
 # ==========================================
+# Mendefinisikan halaman fisik tanpa memuatnya ke memori (Sangat hemat RAM)
+page_kompiler = st.Page("modul_kompiler.py", title="1. Dashboard Kompiler Usulan", icon="📊")
+page_rab = st.Page("modul_rab.py", title="2. Pengolah Dokumen RAB", icon="📝")
+page_tor = st.Page("modul_tor.py", title="3. Generator TOR Otomatis", icon="🤖")
+page_ekstrak = st.Page("modul_ekstrak_rkakl.py", title="4. Ekstrak RKAKL Universitas", icon="📥")
+
+# Mengatur Sidebar (Logout & Identitas)
 with st.sidebar:
     st.header("Sistem Perencanaan")
     st.markdown(f"👤 **{st.session_state['nama_user']}**")
     st.markdown("---")
-    
-    # Penyesuaian hak akses menu navigasi berdasarkan peran pengguna
-    if st.session_state.get("role") == "admin":
-        menu_options = [
-            "1. Dashboard Kompiler Usulan", 
-            "2. Pengolah Dokumen RAB", 
-            "3. Generator TOR Otomatis",
-            "4. Ekstrak RKAKL Universitas" # Menu baru khusus admin
-        ]
-    else:
-        menu_options = [
-            "1. Dashboard Kompiler Usulan"
-        ]
-        
-    menu_pilihan = st.radio("📍 Navigasi Menu:", menu_options)
-    st.markdown("---")
-        
     if st.button("🚪 Logout", type="primary"):
-        st.session_state.update({"logged_in": False, "role": None, "nama_user": None, "username": None})
+        st.session_state.clear()
         st.rerun()
 
-# ==========================================
-# ROUTING HALAMAN (MENGGUNAKAN VALIDASI TEXT)
-# ==========================================
-if "Dashboard Kompiler Usulan" in menu_pilihan:
-    modul_kompiler.show_page()
-elif "Pengolah Dokumen RAB" in menu_pilihan:
-    modul_rab.show_page()
-elif "Generator TOR Otomatis" in menu_pilihan:
-    modul_tor.show_page()
-elif "Ekstrak RKAKL Universitas" in menu_pilihan:
-    modul_ekstrak_rkakl.show_page()
+# Memisahkan Hak Akses (Role-Based Access Control)
+if st.session_state["role"] == "admin":
+    # Admin melihat semua menu
+    pg = st.navigation([page_kompiler, page_rab, page_tor, page_ekstrak])
+else:
+    # Prodi hanya melihat dashboard kompiler
+    pg = st.navigation([page_kompiler])
+
+# Menjalankan halaman yang di-klik pengguna
+pg.run()
