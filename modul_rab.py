@@ -11,15 +11,28 @@ DB_URL = st.secrets["DB_URL"]
 engine = create_engine(DB_URL, pool_size=10, max_overflow=20)
 
 # =====================================================================
-# FUNGSI DATABASE & PENGAMAN ANTI-CRASH (AUTO-RETRY)
+# FUNGSI DATABASE: MATA-MATA TAHUN & PENGAMAN ANTI-CRASH
 # =====================================================================
 @st.cache_data(ttl=300)
-def load_table(table_name, default_cols):
-    # Fitur Auto-Retry: Mencoba 2 kali jika koneksi sibuk/menggantung
+def get_available_years():
+    # Mengambil deretan angka tahun saja, super cepat!
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql('SELECT DISTINCT "Tahun" FROM rab_utama', conn)
+            if not df.empty:
+                years = df['Tahun'].astype(str).tolist()
+                return sorted(list(set(years + [str(datetime.now().year + 1)])), reverse=True)
+    except Exception:
+        engine.dispose()
+    return [str(datetime.now().year + 1)]
+
+@st.cache_data(ttl=300)
+def load_table(table_name, default_cols, where_clause=""):
     for attempt in range(2):
         try:
             with engine.connect() as conn:
-                df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+                # Modifikasi agar bisa memfilter spesifik dari database langsung
+                df = pd.read_sql(f"SELECT * FROM {table_name} {where_clause}", conn)
                 
             for col in default_cols:
                 if col not in df.columns:
@@ -36,7 +49,7 @@ def load_table(table_name, default_cols):
             return df
             
         except Exception as e:
-            engine.dispose() # Hancurkan koneksi yang macet
+            engine.dispose() 
             err_str = str(e).lower()
             if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
                 df = pd.DataFrame(columns=default_cols)
@@ -47,12 +60,13 @@ def load_table(table_name, default_cols):
                     pass
                 return df
             
-            if attempt == 1: # Jika percobaan kedua masih gagal
-                st.cache_data.clear() # Cegah data kosong tersimpan di memori
+            if attempt == 1: 
+                st.cache_data.clear() 
                 st.error(f"Sistem sedang sibuk. Koneksi ke {table_name} terputus. Silakan refresh halaman.")
                 st.stop()
 
 def save_table(df, table_name):
+    # Hanya untuk Data Master
     try:
         with engine.begin() as conn:
             df.to_sql(table_name, conn, if_exists="replace", index=False)
@@ -61,6 +75,30 @@ def save_table(df, table_name):
     except Exception as e:
         engine.dispose() 
         st.error(f"🚨 Koneksi database sibuk/terputus. Koneksi telah di-reset otomatis. Silakan klik tombol Simpan sekali lagi! (Detail: {str(e)[:100]}...)")
+        return False
+
+def update_rab_tahun(df_u_part, df_d_part, tahun):
+    # Fungsi PINTAR: Menjahit data yang diedit dengan data tahun lawas agar tidak saling timpa
+    try:
+        try:
+            with engine.connect() as conn:
+                df_u_sisa = pd.read_sql(f"SELECT * FROM rab_utama WHERE \"Tahun\" != '{tahun}'", conn)
+                df_d_sisa = pd.read_sql(f"SELECT * FROM rab_detail WHERE \"ID_RAB\" NOT IN (SELECT \"ID_RAB\" FROM rab_utama WHERE \"Tahun\" = '{tahun}')", conn)
+        except Exception:
+            df_u_sisa, df_d_sisa = pd.DataFrame(), pd.DataFrame()
+            
+        df_u_final = pd.concat([df_u_sisa, df_u_part], ignore_index=True)
+        df_d_final = pd.concat([df_d_sisa, df_d_part], ignore_index=True)
+        
+        with engine.begin() as conn:
+            df_u_final.to_sql("rab_utama", conn, if_exists="replace", index=False)
+            df_d_final.to_sql("rab_detail", conn, if_exists="replace", index=False)
+            
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        engine.dispose()
+        st.error(f"🚨 Gagal menyimpan data RKA tahun {tahun}: {e}")
         return False
 
 def format_rupiah(x):
@@ -532,8 +570,19 @@ def show_page():
         st.session_state['war_room_cats'] = {}
     if 'war_room_view' not in st.session_state:
         st.session_state['war_room_view'] = ""
-        
-    # 1. Load Data
+
+    st.title("📄 Pengolah Dokumen RAB Universitas")
+    st.caption("Sistem Manajemen & Generator RAB Berjenjang dengan Pemisahan Kode Otomatis, Sumber Dana & Matrik Versi Anggaran.")
+
+    # --- LANGKAH 1: TARIK DATA TAHUN SUPER CEPAT ---
+    list_tahun = get_available_years()
+    tahun_aktif = st.sidebar.selectbox("📅 Pilih Tahun Anggaran Aktif:", list_tahun)
+
+    tab_master, tab_buat, tab_daftar, tab_rekap, tab_matrik, tab_rapat = st.tabs([
+        "🗂️ Master", "📝 Buat / Edit RAB", "📂 Arsip & Versi", "📊 RKAKL Aktif", "⚖️ Matrik Perubahan", "🛠️ Rapat Revisi"
+    ])
+
+    # --- LANGKAH 2: LAZY LOADING (TARIK DATA MASTER) ---
     df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
     df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
     df_m_komp = load_table("rab_m_komp", ["RO", "Komponen", "Sumber_Dana"])
@@ -541,24 +590,23 @@ def show_page():
     df_m_akun = load_table("rab_m_akun", ["Sub_Komponen", "Account_Code", "Account_Name", "Sumber_Dana"]) 
     df_m_pejabat = load_table("rab_m_pejabat", ["Jabatan", "Nama", "NIP"])
 
-    df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat", "Versi_RAB", "Is_Active", "Catatan"])
-    df_rab_detail = load_table("rab_detail", ["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
+    # --- LANGKAH 2: LAZY LOADING (TARIK DATA TRANSAKSI SPESIFIK TAHUN SAJA) ---
+    df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat", "Versi_RAB", "Is_Active", "Catatan"], f"WHERE \"Tahun\" = '{tahun_aktif}'")
+    
+    if not df_rab_utama.empty:
+        ids = tuple(df_rab_utama['ID_RAB'].tolist())
+        if len(ids) == 1:
+            where_det = f"WHERE \"ID_RAB\" = '{ids[0]}'"
+        else:
+            where_det = f"WHERE \"ID_RAB\" IN {ids}"
+        df_rab_detail = load_table("rab_detail", ["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"], where_det)
+    else:
+        df_rab_detail = pd.DataFrame(columns=["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
 
     unique_kegiatans = sorted(df_rab_utama['Kegiatan'].unique()) if not df_rab_utama.empty else []
     kegiatan_code_map = {keg: f"{i+1:04d}" for i, keg in enumerate(unique_kegiatans)}
 
     if 'edit_rab_id' not in st.session_state: st.session_state.edit_rab_id = None
-
-    st.title("📄 Pengolah Dokumen RAB Universitas")
-    st.caption("Sistem Manajemen & Generator RAB Berjenjang dengan Pemisahan Kode Otomatis, Sumber Dana & Matrik Versi Anggaran.")
-
-    list_tahun = sorted(df_rab_utama['Tahun'].unique().tolist() + [str(datetime.now().year + 1)], reverse=True)
-    list_tahun = list(dict.fromkeys(list_tahun)) 
-    tahun_aktif = st.sidebar.selectbox("📅 Pilih Tahun Anggaran Aktif:", list_tahun)
-
-    tab_master, tab_buat, tab_daftar, tab_rekap, tab_matrik, tab_rapat = st.tabs([
-        "🗂️ Master", "📝 Buat / Edit RAB", "📂 Arsip & Versi", "📊 RKAKL Aktif", "⚖️ Matrik Perubahan", "🛠️ Rapat Revisi"
-    ])
 
     # -----------------------------------------------------------------
     # TAB 1: MASTER DATABASE
@@ -725,7 +773,7 @@ def show_page():
                 if not opsi_akun: 
                     opsi_akun = ["- Tidak ada akun terpetakan -"]
                 else:
-                    opsi_akun = list(dict.fromkeys(opsi_akun)) # Penyaring Duplikat
+                    opsi_akun = list(dict.fromkeys(opsi_akun))
                 
                 if is_edit_mode and not df_edit_det.empty:
                     df_det_edit = df_edit_det.rename(columns={"Akun_Belanja":"Akun Belanja", "Uraian":"Uraian Belanja", "Vol_1":"Vol 1", "Sat_1":"Sat 1", "Vol_2":"Vol 2", "Sat_2":"Sat 2", "Harga_Satuan":"Harga Satuan"})
@@ -787,7 +835,7 @@ def show_page():
                         id_rab_baru = f"RAB-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         dt_pjb = df_m_pejabat.loc[pilih_pejabat]
                         
-                        active_vs = df_rab_utama[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
+                        active_vs = df_rab_utama[(df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                         is_act = 1 if len(active_vs) == 0 or rab_versi in active_vs else 0
 
                         new_utama = pd.DataFrame([{
@@ -798,24 +846,25 @@ def show_page():
                             "Versi_RAB": rab_versi, "Is_Active": is_act, "Catatan": rab_catatan
                         }])
                         df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
-                        save_result = save_table(df_rab_utama, "rab_utama")
                         
-                        if save_result:
-                            valid_detail["ID_RAB"] = id_rab_baru
-                            valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
-                            valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
-                            
-                            df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
-                            save_table(df_rab_detail, "rab_detail")
-                            
-                            st.session_state.edit_rab_id = None
-                            st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
+                        valid_detail["ID_RAB"] = id_rab_baru
+                        valid_detail["Total_Biaya"] = valid_detail["Vol_1_Num"] * valid_detail["Vol_2_Num"] * valid_detail["Harga_Num"]
+                        valid_detail.rename(columns={"Akun Belanja": "Akun_Belanja", "Uraian Belanja": "Uraian", "Vol 1":"Vol_1", "Sat 1":"Sat_1", "Vol 2":"Vol_2", "Sat 2":"Sat_2", "Harga Satuan": "Harga_Satuan"}, inplace=True)
+                        df_rab_detail = pd.concat([df_rab_detail, valid_detail[["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"]]], ignore_index=True)
+                        
+                        # Menggunakan Auto-Stitch Saving
+                        update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                        
+                        st.session_state.edit_rab_id = None
+                        st.success(f"✅ RAB '{rab_kegiatan.title()}' Versi '{rab_versi}' Tersimpan!"); st.rerun()
 
     # -----------------------------------------------------------------
     # TAB 3: ARSIP & MANAJEMEN VERSI RAB
     # -----------------------------------------------------------------
     with tab_daftar:
-        df_utama_thn = df_rab_utama[df_rab_utama['Tahun'] == tahun_aktif]
+        # Kode jauh lebih bersih karena df_rab_utama sudah pasti berisi tahun aktif
+        df_utama_thn = df_rab_utama.copy()
+        
         if df_utama_thn.empty: 
             st.info(f"Belum ada dokumen RAB untuk Tahun {tahun_aktif}.")
         else:
@@ -835,18 +884,18 @@ def show_page():
             if len(active_versions) > 1:
                 st.error(f"🚨 **TERDETEKSI KONFLIK MULTI-VERSI:** Ada {len(active_versions)} versi yang berstatus Aktif secara bersamaan ({', '.join(active_versions)}). Ini menyebabkan data RKAKL Aktif Anda bertumpuk dan bocor!")
                 if st.button(f"🛠️ Perbaiki & Jadikan HANYA Versi '{pilih_v_arsip}' Sebagai Acuan Utama", type="primary", use_container_width=True):
-                    df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
-                    df_rab_utama.loc[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Versi_RAB'] == pilih_v_arsip), 'Is_Active'] = 1
-                    save_table(df_rab_utama, "rab_utama")
+                    df_rab_utama['Is_Active'] = 0
+                    df_rab_utama.loc[df_rab_utama['Versi_RAB'] == pilih_v_arsip, 'Is_Active'] = 1
+                    update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                     st.rerun()
             elif is_v_active == 1:
                 st.success(f"✅ **STATUS VERSI: AKTIF (FINAL ACUAN)**. Seluruh kegiatan pada versi '{pilih_v_arsip}' ditarik ke dalam Rekapitulasi Global RKAKL.")
             else:
                 st.warning(f"🗄️ **STATUS VERSI: ARSIP REVISI (TIDAK AKTIF)**. Versi ini disimpan sebagai rekaman sejarah anggaran.")
                 if st.button(f"🔄 Jadikan Seluruh Kegiatan di Versi '{pilih_v_arsip}' Sebagai Acuan Aktif", type="primary"):
-                    df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
-                    df_rab_utama.loc[(df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Versi_RAB'] == pilih_v_arsip), 'Is_Active'] = 1
-                    save_table(df_rab_utama, "rab_utama")
+                    df_rab_utama['Is_Active'] = 0
+                    df_rab_utama.loc[df_rab_utama['Versi_RAB'] == pilih_v_arsip, 'Is_Active'] = 1
+                    update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                     st.toast(f"Versi {pilih_v_arsip} Berhasil Diaktifkan!")
                     st.rerun()
 
@@ -860,8 +909,7 @@ def show_page():
                         ids_to_delete = df_v_terpilih['ID_RAB'].tolist()
                         df_rab_utama = df_rab_utama[~df_rab_utama['ID_RAB'].isin(ids_to_delete)]
                         df_rab_detail = df_rab_detail[~df_rab_detail['ID_RAB'].isin(ids_to_delete)]
-                        save_table(df_rab_utama, "rab_utama")
-                        save_table(df_rab_detail, "rab_detail")
+                        update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                         st.success(f"Seluruh data versi {pilih_v_arsip} ({sumber_dana_arsip}) berhasil dihapus!")
                         st.rerun()
                     else:
@@ -874,7 +922,7 @@ def show_page():
             with st.expander(f"📋 Duplikasi Seluruh Kegiatan Versi '{pilih_v_arsip}' ke Versi Lain"):
                 target_versi = st.selectbox("Pilih Target Versi Baru:", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"])
                 if st.button(f"🚀 Salin Semua ke '{target_versi}'", type="primary"):
-                    df_rab_utama.loc[df_rab_utama['Tahun'] == tahun_aktif, 'Is_Active'] = 0
+                    df_rab_utama['Is_Active'] = 0
                     df_v_asal = df_utama_thn[df_utama_thn['Versi_RAB'] == pilih_v_arsip] 
                     for i, (_, row_keg) in enumerate(df_v_asal.iterrows()):
                         new_row = row_keg.copy()
@@ -889,7 +937,7 @@ def show_page():
                         det_keg_lama['ID_RAB'] = new_id
                         df_rab_detail = pd.concat([df_rab_detail, det_keg_lama], ignore_index=True)
                         
-                    save_table(df_rab_utama, "rab_utama"); save_table(df_rab_detail, "rab_detail")
+                    update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                     st.success(f"Berhasil menduplikasi ke {target_versi} dan versi tersebut langsung diaktifkan!"); st.rerun()
 
             if pilih_keg_arsip:
@@ -926,7 +974,8 @@ def show_page():
                     if st.button("🗑️ Hapus Dokumen Ini", type="secondary", use_container_width=True):
                         df_rab_utama = df_rab_utama[df_rab_utama["ID_RAB"] != id_rab_aktif]
                         df_rab_detail = df_rab_detail[df_rab_detail["ID_RAB"] != id_rab_aktif]
-                        save_table(df_rab_utama, "rab_utama"); save_table(df_rab_detail, "rab_detail"); st.rerun()
+                        update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
+                        st.rerun()
 
     # -----------------------------------------------------------------
     # TAB 4: REKAPITULASI RKAKL AKTIF
@@ -945,7 +994,7 @@ def show_page():
         tampilkan_paraf_rkakl = st.checkbox("Tampilkan Tabel Paraf (Khusus Arsip Hardcopy Internal)", key="paraf_rkakl")
         st.markdown("---")
         
-        df_aktif = df_rab_utama[(df_rab_utama['Is_Active'] == 1) & (df_rab_utama['Tahun'] == tahun_aktif) & (df_rab_utama['Sumber_Dana'] == sumber_dana_rkakl)]
+        df_aktif = df_rab_utama[(df_rab_utama['Is_Active'] == 1) & (df_rab_utama['Sumber_Dana'] == sumber_dana_rkakl)]
         
         if df_aktif.empty:
             st.info(f"Belum ada RAB aktif untuk sumber dana {sumber_dana_rkakl} tahun {tahun_aktif}.")
@@ -968,7 +1017,7 @@ def show_page():
         nip_matrik = col_m3.text_input("NIP Dekan (Matrik)", value="196211271989031004", key="nip_matrik")
         st.markdown("---")
         
-        df_thn = df_rab_utama[df_rab_utama['Tahun'] == tahun_aktif]
+        df_thn = df_rab_utama.copy()
         if df_thn.empty:
             st.warning("Belum ada data untuk dibandingkan.")
         else:
@@ -1025,7 +1074,7 @@ def show_page():
         st.subheader("🛠️ War Room: Mode Edit Matrik Revisi")
         st.info("Edit rincian belanja dengan nyaman. Tombol Download Draf (Excel) bisa digunakan sebagai backup sebelum Anda menyimpan ke database.")
 
-        df_thn_rapat = df_rab_utama[df_rab_utama['Tahun'] == tahun_aktif]
+        df_thn_rapat = df_rab_utama.copy()
         if df_thn_rapat.empty:
             st.warning("Belum ada data untuk tahun aktif ini. Silakan buat RAB terlebih dahulu.")
         else:
@@ -1076,7 +1125,7 @@ def show_page():
                                 "Versi_RAB": versi_rapat, "Is_Active": 0, "Catatan": "-"
                             }])
                             df_rab_utama = pd.concat([df_rab_utama, new_u], ignore_index=True)
-                            save_table(df_rab_utama, "rab_utama")
+                            update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                             st.success(f"Kegiatan {sumber_dana_rapat} berhasil disuntik!"); st.rerun()
 
             st.markdown("---")
@@ -1212,9 +1261,8 @@ def show_page():
                             c_baru = all_catatan_dict.get(id_r, "-")
                             df_rab_utama.loc[df_rab_utama['ID_RAB'] == id_r, 'Catatan'] = c_baru
                             
-                        save_success = save_table(df_rab_utama, "rab_utama")
+                        save_success = update_rab_tahun(df_rab_utama, df_rab_detail, tahun_aktif)
                         if save_success:
-                            save_table(df_rab_detail, "rab_detail")
                             # HAPUS DRAF SETELAH SUKSES SIMPAN KE DATABASE
                             st.session_state['war_room_drafts'].clear()
                             st.session_state['war_room_cats'].clear()
