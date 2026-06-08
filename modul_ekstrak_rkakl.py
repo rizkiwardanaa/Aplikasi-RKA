@@ -449,3 +449,5 @@ def show_page():
                 st.session_state.ekstrak_result = pd.DataFrame() 
                 st.success("🎉 Dokumen RKAKL berhasil diinjeksi. Seluruh struktur kode Master & Riwayat Kegiatan Anda telah sukses di-Heal secara otomatis!")
                 st.rerun()
+# (Letakkan di baris paling akhir file, jangan diberi indentasi/spasi di depannya)
+show_page()
