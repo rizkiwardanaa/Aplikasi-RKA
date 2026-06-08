@@ -328,7 +328,8 @@ def show_page():
         with col_info: st.info("Gunakan tab di bawah untuk meninjau usulan dari setiap Program Studi.")
         with col_toggle: sembunyikan_nilai = st.toggle("🙈 Sembunyikan Nominal Anggaran", value=False)
         
-        tab_rev, tab_hapus, tab_ins, tab_restore = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight", "♻️ Restore Data"])
+        # --- TAB DITAMBAH UNTUK CCTV ---
+        tab_rev, tab_hapus, tab_ins, tab_restore, tab_log = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight", "♻️ Restore Data", "🕵️ Log Aktivitas (CCTV)"])
 
         with tab_restore:
             st.subheader("♻️ Restore Database dari File Cadangan")
@@ -431,5 +432,39 @@ def show_page():
                     col_pdf1, col_pdf2 = st.columns(2)
                     with col_pdf1: st.download_button("📑 PDF: Laporan Prodi (Web)", data=generate_html_report(df_ins_p, prodi_ins_sel, hidden=sembunyikan_nilai).encode('utf-8'), file_name=f"Cetak_{prodi_ins_sel}.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
                     with col_pdf2: st.download_button("📑 PDF: Laporan Fakultas (Web)", data=generate_html_report(df_usulan, "Seluruh Fakultas", hidden=sembunyikan_nilai).encode('utf-8'), file_name="Cetak_FIB_Semua.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
-# (Letakkan di baris paling akhir file, jangan diberi indentasi/spasi di depannya)
+
+        # --- TAB BARU UNTUK CCTV ---
+        with tab_log:
+            st.subheader("🕵️ CCTV Jejak Audit (Audit Trail)")
+            st.caption("Pantau seluruh perubahan dokumen RAB, penguncian versi, dan penghapusan data secara real-time yang dilakukan melalui modul Pengolah RAB.")
+            
+            if st.button("🔄 Refresh Data CCTV"):
+                st.rerun()
+                
+            try:
+                with engine.connect() as conn:
+                    df_logs = pd.read_sql("SELECT * FROM rab_logs ORDER BY \"Waktu\" DESC LIMIT 500", conn)
+                
+                if not df_logs.empty:
+                    st.dataframe(
+                        df_logs, 
+                        use_container_width=True, 
+                        hide_index=True,
+                        column_config={
+                            "Waktu": st.column_config.TextColumn("Waktu Eksekusi", width="medium"),
+                            "User": st.column_config.TextColumn("Pengguna", width="small"),
+                            "Aksi": st.column_config.TextColumn("Jenis Aksi", width="small"),
+                            "Detail": st.column_config.TextColumn("Rincian Aktivitas", width="large")
+                        }
+                    )
+                else:
+                    st.info("Belum ada aktivitas krusial yang terekam oleh CCTV.")
+            except Exception as e:
+                err_str = str(e).lower()
+                if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
+                    st.info("✅ Mesin CCTV sudah siaga. Menunggu aktivitas pertama terekam dari Modul RAB...")
+                else:
+                    st.error("Gagal memuat log aktivitas. Koneksi sedang sibuk.")
+
+# PASTIKAN BARIS INI ADA DI PALING BAWAH FILE:
 show_page()
