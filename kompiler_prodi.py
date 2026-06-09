@@ -39,30 +39,35 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # ==========================================
-# MULTIPAGE ROUTING & NAVIGATION (LAZY LOADING)
+# NAVBAR BERJENJANG (GROUPED NAVIGATION)
 # ==========================================
-# Mendefinisikan halaman fisik tanpa memuatnya ke memori (Sangat hemat RAM)
-page_kompiler = st.Page("modul_kompiler.py", title="1. Dashboard Kompiler Usulan", icon="📊")
-page_rab = st.Page("modul_rab.py", title="2. Pengolah Dokumen RAB", icon="📝")
-page_tor = st.Page("modul_tor.py", title="3. Generator TOR Otomatis", icon="🤖")
-page_ekstrak = st.Page("modul_ekstrak_rkakl.py", title="4. Ekstrak RKAKL Universitas", icon="📥")
+page_kompiler = st.Page("modul_kompiler.py", title="Dashboard Monitoring", icon="📊")
 
-# Mengatur Sidebar (Logout & Identitas)
+# (Ini wadah sementara untuk modul_rab sebelum kita pecah di langkah 2)
+page_rab_sementara = st.Page("modul_rab.py", title="Pengolah RAB (Segera Dipecah)", icon="📦")
+
+page_tor = st.Page("modul_tor.py", title="Generator TOR", icon="🤖")
+page_ekstrak = st.Page("modul_ekstrak_rkakl.py", title="Ekstrak RKAKL PDF", icon="📥")
+
 with st.sidebar:
     st.header("Sistem Perencanaan")
     st.markdown(f"👤 **{st.session_state['nama_user']}**")
     st.markdown("---")
-    if st.button("🚪 Logout", type="primary"):
+    if st.button("🚪 Logout", type="primary", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
-# Memisahkan Hak Akses (Role-Based Access Control)
+# --- PENENTUAN HAK AKSES DAN STRUKTUR MENU ---
 if st.session_state["role"] == "admin":
-    # Admin melihat semua menu
-    pg = st.navigation([page_kompiler, page_rab, page_tor, page_ekstrak])
+    pg = st.navigation({
+        "PAPAN KENDALI": [page_kompiler],
+        "MODUL ANGGARAN (RAB)": [page_rab_sementara],
+        "MODUL EKSTRA": [page_tor, page_ekstrak]
+    })
 else:
-    # Prodi hanya melihat dashboard kompiler
-    pg = st.navigation([page_kompiler])
+    pg = st.navigation({
+        "USULAN PRODI": [page_kompiler]
+    })
 
-# Menjalankan halaman yang di-klik pengguna
+# Menjalankan router
 pg.run()
