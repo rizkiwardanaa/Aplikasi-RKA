@@ -2,41 +2,12 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
-from sqlalchemy import create_engine
-import io
+from utils import load_table, save_table, update_rab_tahun, log_audit
 
 try:
     import pdfplumber
 except ImportError:
     st.error("⚠️ Pustaka pdfplumber belum terinstal. Pastikan file requirements.txt sudah di-update.")
-
-# --- KONEKSI DATABASE ---
-DB_URL = st.secrets["DB_URL"]
-engine = create_engine(DB_URL, pool_size=10, max_overflow=20)
-
-# --- FUNGSI DATABASE ANTI-CRASH ---
-@st.cache_data(ttl=300)
-def load_table(table_name):
-    for attempt in range(2):
-        try:
-            with engine.connect() as conn:
-                df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-            return df
-        except Exception as e:
-            engine.dispose()
-            if attempt == 1:
-                return pd.DataFrame()
-
-def save_table(df, table_name):
-    try:
-        with engine.begin() as conn:
-            df.to_sql(table_name, conn, if_exists="replace", index=False)
-        st.cache_data.clear()
-        return True
-    except Exception as e:
-        engine.dispose()
-        st.error(f"🚨 Koneksi database sibuk saat menyimpan {table_name}. Silakan coba lagi! Detail: {str(e)[:100]}")
-        return False
 
 # --- FUNGSI PEMISAH KODE UNTUK AUTO-HEAL ---
 def split_kd(teks):
@@ -229,7 +200,7 @@ def parse_pdf_rkakl(file_bytes):
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. Dilengkapi fitur Auto-Heal Master untuk mengatasi duplikasi pergantian nama kode.")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. Terhubung dengan CCTV Audit & Mesin Auto-Heal.")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -240,7 +211,7 @@ def show_page():
         st.subheader("1. Setup Target Injeksi")
         col1, col2, col3 = st.columns(3)
         thn_target = col1.text_input("Tahun Anggaran", value=str(datetime.now().year + 1))
-        ver_target = col2.selectbox("Versi RKA", ["Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8"])
+        ver_target = col2.selectbox("Versi RKA", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"])
         sumber_dana = col3.radio("Sumber Dana", ["BOPTN", "PNBP"], horizontal=True)
 
         file_pdf = st.file_uploader("2. Unggah Dokumen PDF RKAKL", type=['pdf'])
@@ -277,13 +248,22 @@ def show_page():
 
         if st.button("💾 Konfirmasi & Simpan Permanen ke Database", type="primary", use_container_width=True):
             with st.spinner("Menyuntikkan data, Membersihkan Duplikat Master, & Melakukan Auto-Heal..."):
-                df_m_kro = load_table("rab_m_kro")
-                df_m_ro = load_table("rab_m_ro")
-                df_m_komp = load_table("rab_m_komp")
-                df_m_sub = load_table("rab_m_subkomp")
-                df_m_akun = load_table("rab_m_akun")
-                df_rab_utama = load_table("rab_utama")
-                df_rab_detail = load_table("rab_detail")
+                
+                # --- MEMANGGIL DATA MENGGUNAKAN UTILS BARU ---
+                df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
+                df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
+                df_m_komp = load_table("rab_m_komp", ["RO", "Komponen", "Sumber_Dana"])
+                df_m_sub = load_table("rab_m_subkomp", ["Komponen", "Sub_Komponen", "Sumber_Dana"])
+                df_m_akun = load_table("rab_m_akun", ["Sub_Komponen", "Account_Code", "Account_Name", "Sumber_Dana"])
+                
+                df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat", "Versi_RAB", "Is_Active", "Catatan"], f"WHERE \"Tahun\" = '{thn_target}'")
+                
+                if not df_rab_utama.empty:
+                    ids = tuple(df_rab_utama['ID_RAB'].tolist())
+                    where_det = f"WHERE \"ID_RAB\" = '{ids[0]}'" if len(ids) == 1 else f"WHERE \"ID_RAB\" IN {ids}"
+                    df_rab_detail = load_table("rab_detail", ["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"], where_det)
+                else:
+                    df_rab_detail = pd.DataFrame(columns=["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
                 
                 # --- AUTO HEAL 1: KRO ---
                 kro_updates = {}
@@ -412,8 +392,8 @@ def show_page():
                 save_table(df_m_sub, "rab_m_subkomp")
                 save_table(df_m_akun, "rab_m_akun")
                 
-                # SEKARANG SIMPAN DATA UTAMA (Mencegah Menimpa Diri Sendiri)
-                active_vs = df_rab_utama[(df_rab_utama['Tahun'] == thn_target) & (df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
+                # SEKARANG SIMPAN DATA UTAMA TRANSAKSI TAHUNAN
+                active_vs = df_rab_utama[(df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                 is_act = 1 if len(active_vs) == 0 or ver_target in active_vs else 0
 
                 kegiatan_unik = df_edit['Kegiatan'].unique()
@@ -434,7 +414,7 @@ def show_page():
                         "Sumber_Dana": sumber_dana, "KRO": kro_v, "RO": ro_v, "Komponen": komp_v, "Sub_Komponen": sub_v,
                         "Kegiatan": keg_name, "Sasaran": "-", "Volume": 1, "Satuan": "Layanan", "Alokasi": total_alokasi,
                         "Jabatan": "Dekan", "Nama_Pejabat": "-", "NIP_Pejabat": "-",
-                        "Versi_RAB": ver_target, "Is_Active": is_act
+                        "Versi_RAB": ver_target, "Is_Active": is_act, "Catatan": "-"
                     }])
                     df_rab_utama = pd.concat([df_rab_utama, new_utama], ignore_index=True)
                     
@@ -443,11 +423,13 @@ def show_page():
                     new_detail = df_keg_details[['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']]
                     df_rab_detail = pd.concat([df_rab_detail, new_detail], ignore_index=True)
                 
-                save_table(df_rab_utama, "rab_utama")
-                save_table(df_rab_detail, "rab_detail")
-                
-                st.session_state.ekstrak_result = pd.DataFrame() 
-                st.success("🎉 Dokumen RKAKL berhasil diinjeksi. Seluruh struktur kode Master & Riwayat Kegiatan Anda telah sukses di-Heal secara otomatis!")
-                st.rerun()
-# (Letakkan di baris paling akhir file, jangan diberi indentasi/spasi di depannya)
+                # MENGGUNAKAN UPDATE TAHUNAN AGAR TIDAK MENIMPA TAHUN LAIN
+                save_success = update_rab_tahun(df_rab_utama, df_rab_detail, thn_target)
+                if save_success:
+                    log_audit("EKSTRAK PDF", f"Injeksi otomatis data RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}). Total Kegiatan: {len(kegiatan_unik)}")
+                    st.session_state.ekstrak_result = pd.DataFrame() 
+                    st.success("🎉 Dokumen RKAKL berhasil diinjeksi. Seluruh struktur kode Master & Riwayat Kegiatan Anda telah sukses di-Heal secara otomatis!")
+                    st.rerun()
+
+# PASTIKAN BARIS INI ADA DI PALING BAWAH FILE:
 show_page()
