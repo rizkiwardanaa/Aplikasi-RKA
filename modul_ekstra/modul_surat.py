@@ -47,14 +47,17 @@ def build_surat_docx(meta, narasi):
     section.top_margin = Cm(2.5); section.bottom_margin = Cm(2.0)
     section.left_margin = Cm(2.5); section.right_margin = Cm(2.0)
 
-    # HEADER / KOP SURAT
+    # HEADER / KOP SURAT (GANTI BAGIAN INI)
     p_kop = doc.add_paragraph()
     p_kop.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p_kop.add_run("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI\nUNIVERSITAS MULAWARMAN\nFAKULTAS ILMU BUDAYA\n")
     r.bold = True
     r.font.size = Pt(12)
     p_kop.add_run("Jl. Ki Hajar Dewantara, Kampus Gunung Kelua, Samarinda 75123\nTelepon (0541) 7809033 | http://fib.unmul.ac.id").font.size = Pt(9)
-    doc.add_paragraph().add_run().add_picture(BytesIO(), width=Cm(16)) # Garis
+    
+    # MENGGANTI .add_picture DENGAN BORDER PARAGRAF (LEBIH AMAN)
+    paragraph_format = p_kop.paragraph_format
+    paragraph_format.paragraph_border_bottom = Pt(2.0)
 
     # NOMOR & HAL
     t = doc.add_table(rows=0, cols=3)
