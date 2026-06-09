@@ -8,40 +8,31 @@ from sqlalchemy import create_engine
 # KONEKSI KE CLOUD DATABASE (NEON POSTGRESQL)
 # =====================================================================
 DB_URL = st.secrets["DB_URL"]
-
-# Menggunakan Connection Pooling agar database cloud tidak lambat/lag
 engine = create_engine(DB_URL, pool_size=10, max_overflow=20, pool_timeout=30)
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tor_uploads")
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 
 # =====================================================================
-# FUNGSI DATABASE KOMPILER PRODI (BUG WIPE DATA DIPERBAIKI)
+# FUNGSI DATABASE KOMPILER PRODI 
 # =====================================================================
 @st.cache_data(ttl=300) 
 def load_data():
     try:
         with engine.connect() as conn:
-            df = pd.read_sql("SELECT * FROM usulan", conn)
-        return df
+            return pd.read_sql("SELECT * FROM usulan", conn)
     except Exception as e:
         err_str = str(e).lower()
-        # HANYA buat tabel baru jika tabel benar-benar belum ada di database
         if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
             df_kosong = pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
-            with engine.connect() as conn:
-                df_kosong.to_sql("usulan", conn, if_exists="append", index=False)
+            with engine.connect() as conn: df_kosong.to_sql("usulan", conn, if_exists="append", index=False)
             return df_kosong
         else:
-            # Jika hanya masalah koneksi/timeout, JANGAN ditimpa!
-            st.error(f"Koneksi database sedang sibuk/terputus. Error: {e}")
+            st.error(f"Koneksi database sedang sibuk. Error: {e}")
             return pd.DataFrame(columns=["Tanggal_Input", "Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan", "Prioritas", "Status", "Catatan_Fakultas", "File_TOR"])
 
 def save_data(df):
-    """Menyimpan data ke Cloud dan menghapus cache agar layar langsung ter-update"""
-    with engine.connect() as conn:
-        df.to_sql("usulan", conn, if_exists="replace", index=False)
+    with engine.connect() as conn: df.to_sql("usulan", conn, if_exists="replace", index=False)
     load_data.clear() 
 
 def format_rupiah(x):
@@ -54,9 +45,7 @@ def format_rupiah(x):
 def generate_html_report(df_data, nama_prodi, hidden=False):
     html = f"""
     <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
+    <html><head><meta charset="utf-8">
     <style>
         @page {{ size: A4; margin: 15mm 20mm; @bottom-right {{ content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #718096; font-family: 'Arial', sans-serif; }} }}
         *, *::before, *::after {{ box-sizing: border-box; }}
@@ -81,9 +70,7 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
         .text-right {{ text-align: right !important; }}
         .text-center {{ text-align: center !important; }}
         .total-row td {{ font-weight: bold; background-color: #f3f4f6 !important; }}
-    </style>
-    </head>
-    <body>
+    </style></head><body>
         <div class="kop-surat">
             <img src="https://lh3.googleusercontent.com/d/13kT8UkeAomtnzXVMaVRi9KWrU2IceX4r" class="kop-logo" alt="Logo Unmul">
             <div class="kop-teks">
@@ -103,9 +90,7 @@ def generate_html_report(df_data, nama_prodi, hidden=False):
     """
     prodi_list = sorted(df_data["Program_Studi"].unique())
     for prodi in prodi_list:
-        if nama_prodi == "Seluruh Fakultas":
-            html += f"<div class='sub-judul-prodi'>▶ PROGRAM STUDI: {prodi}</div>"
-            
+        if nama_prodi == "Seluruh Fakultas": html += f"<div class='sub-judul-prodi'>▶ PROGRAM STUDI: {prodi}</div>"
         df_p = df_data[df_data["Program_Studi"] == prodi]
         rekap_keg_prodi = df_p.groupby("Nama_Kegiatan")["Total_Usulan"].sum().reset_index()
         
@@ -161,13 +146,13 @@ def generate_excel(df_to_save, nama_sheet):
 # FUNGSI UTAMA HALAMAN KOMPILER (RENDER UI)
 # =====================================================================
 def show_page():
-    # Menggunakan .copy() agar dataframe cache tidak termutasi (berubah) di memori
     df_usulan = load_data().copy()
+    role_user = st.session_state.get("role", "")
     
     # ----------------------------------------------------
-    # TAMPILAN PRODI
+    # TAMPILAN PRODI (PENGUSUL)
     # ----------------------------------------------------
-    if st.session_state["role"] == "prodi":
+    if role_user == "prodi":
         st.title(f"📍 Panel Usulan: {st.session_state['nama_user']}")
         tab_dash, tab_baru, tab_riwayat = st.tabs(["📊 Dashboard Prodi", "📤 Buat Usulan Baru", "📜 Monitoring & Revisi"])
 
@@ -319,43 +304,25 @@ def show_page():
                             save_data(df_usulan); st.success("TOR Terupdate!"); st.rerun()
 
     # ----------------------------------------------------
-    # TAMPILAN ADMIN (KOMPILER)
+    # TAMPILAN ADMIN & PIMPINAN (REVIEWER)
     # ----------------------------------------------------
-    elif st.session_state["role"] == "admin":
+    elif role_user in ["admin", "pimpinan", "dekan", "wadek", "reviewer"]:
         st.title("📊 Dashboard Monitoring & Review")
         
         col_info, col_toggle = st.columns([3, 1])
         with col_info: st.info("Gunakan tab di bawah untuk meninjau usulan dari setiap Program Studi.")
         with col_toggle: sembunyikan_nilai = st.toggle("🙈 Sembunyikan Nominal Anggaran", value=False)
         
-        # --- TAB DITAMBAH UNTUK CCTV ---
-        tab_rev, tab_hapus, tab_ins, tab_restore, tab_log = st.tabs(["📋 Review & Analisis", "🗑️ Manajemen Data", "🤖 Insight", "♻️ Restore Data", "🕵️ Log Aktivitas (CCTV)"])
+        # --- PERCABANGAN TAB SESUAI PERAN ---
+        if role_user == "admin":
+            tab_rev, tab_ins, tab_hapus, tab_restore, tab_log = st.tabs(["📋 Review & Analisis", "🤖 Insight", "🗑️ Manajemen Data", "♻️ Restore Data", "🕵️ Log Aktivitas (CCTV)"])
+        else:
+            # Pimpinan hanya memiliki 2 tab (Tidak ada Manajemen Data, Restore, CCTV)
+            tab_rev, tab_ins = st.tabs(["📋 Review & Analisis", "🤖 Insight Pintar"])
 
-        with tab_restore:
-            st.subheader("♻️ Restore Database dari File Cadangan")
-            st.warning("Upload file **Rekap_FIB.csv** (atau file Excel Backup Anda) di bawah ini untuk mengembalikan seluruh data prodi yang hilang.")
-            
-            file_cadangan = st.file_uploader("Upload File Backup CSV/Excel Anda di sini", type=["csv", "xlsx"])
-            if st.button("🚀 Jalankan Restore Data", type="primary"):
-                if file_cadangan is not None:
-                    try:
-                        if file_cadangan.name.endswith('.csv'): df_pulih = pd.read_csv(file_cadangan)
-                        else: df_pulih = pd.read_excel(file_cadangan)
-                        
-                        kolom_wajib = ["Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]
-                        if all(k in df_pulih.columns for k in kolom_wajib):
-                            if "Tanggal_Input" not in df_pulih.columns: df_pulih["Tanggal_Input"] = "-"
-                            if "Prioritas" not in df_pulih.columns: df_pulih["Prioritas"] = "Sedang"
-                            if "Status" not in df_pulih.columns: df_pulih["Status"] = "Menunggu Review"
-                            if "Catatan_Fakultas" not in df_pulih.columns: df_pulih["Catatan_Fakultas"] = "-"
-                            if "File_TOR" not in df_pulih.columns: df_pulih["File_TOR"] = "-"
-                            save_data(df_pulih); st.success("🎉 Seluruh data telah berhasil dipulihkan!"); st.rerun()
-                        else: st.error("Gagal! Format kolom pada file yang diupload tidak cocok dengan database aplikasi.")
-                    except Exception as e: st.error(f"Kesalahan saat membaca file: {e}")
-                else: st.error("Pilih file CSV atau Excel terlebih dahulu.")
-
+        # ---> ISI TAB REVIEW (UNTUK KEDUANYA)
         with tab_rev:
-            if df_usulan.empty: st.warning("Data kosong. Silakan gunakan tab 'Restore Data' jika Anda memiliki backup.")
+            if df_usulan.empty: st.warning("Data kosong.")
             else:
                 st.subheader("🏙️ Rekapitulasi Anggaran Per Prodi")
                 rekap_semua = df_usulan.groupby("Program_Studi")["Total_Usulan"].sum().reset_index()
@@ -391,15 +358,7 @@ def show_page():
                         if sembunyikan_nilai: st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan"]].copy(), hide_index=True, use_container_width=True)
                         else: st.dataframe(df_k[["Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]].style.format({"Harga_Satuan": format_rupiah, "Total_Usulan": format_rupiah}), hide_index=True, use_container_width=True)
 
-        with tab_hapus:
-            st.subheader("🗑️ Hapus Data Rincian")
-            if not df_usulan.empty:
-                opsi_hapus = {idx: f"[{row['Program_Studi']}] {row['Nama_Kegiatan']} - {row['Rincian_Belanja']}" for idx, row in df_usulan.iterrows()}
-                sel_h = st.selectbox("Pilih data rincian belanja:", options=list(opsi_hapus.keys()), format_func=lambda x: opsi_hapus[x])
-                if st.button("🚨 Hapus Permanen", type="primary"):
-                    df_usulan = df_usulan.drop(index=sel_h).reset_index(drop=True)
-                    save_data(df_usulan); st.success("Dihapus!"); st.rerun()
-
+        # ---> ISI TAB INSIGHT (UNTUK KEDUANYA)
         with tab_ins:
             st.subheader("🤖 Analisis & Insight Pintar")
             if not df_usulan.empty:
@@ -433,38 +392,71 @@ def show_page():
                     with col_pdf1: st.download_button("📑 PDF: Laporan Prodi (Web)", data=generate_html_report(df_ins_p, prodi_ins_sel, hidden=sembunyikan_nilai).encode('utf-8'), file_name=f"Cetak_{prodi_ins_sel}.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
                     with col_pdf2: st.download_button("📑 PDF: Laporan Fakultas (Web)", data=generate_html_report(df_usulan, "Seluruh Fakultas", hidden=sembunyikan_nilai).encode('utf-8'), file_name="Cetak_FIB_Semua.html", mime="text/html", help="Tekan Ctrl+P di browser.", use_container_width=True)
 
-        # --- TAB BARU UNTUK CCTV ---
-        with tab_log:
-            st.subheader("🕵️ CCTV Jejak Audit (Audit Trail)")
-            st.caption("Pantau seluruh perubahan dokumen RAB, penguncian versi, dan penghapusan data secara real-time yang dilakukan melalui modul Pengolah RAB.")
-            
-            if st.button("🔄 Refresh Data CCTV"):
-                st.rerun()
+        # ---> ISI TAB KHUSUS ADMIN (TIDAK DITAMPILKAN KE PIMPINAN)
+        if role_user == "admin":
+            with tab_hapus:
+                st.subheader("🗑️ Hapus Data Rincian")
+                if not df_usulan.empty:
+                    opsi_hapus = {idx: f"[{row['Program_Studi']}] {row['Nama_Kegiatan']} - {row['Rincian_Belanja']}" for idx, row in df_usulan.iterrows()}
+                    sel_h = st.selectbox("Pilih data rincian belanja:", options=list(opsi_hapus.keys()), format_func=lambda x: opsi_hapus[x])
+                    if st.button("🚨 Hapus Permanen", type="primary"):
+                        df_usulan = df_usulan.drop(index=sel_h).reset_index(drop=True)
+                        save_data(df_usulan); st.success("Dihapus!"); st.rerun()
+
+            with tab_restore:
+                st.subheader("♻️ Restore Database dari File Cadangan")
+                st.warning("Upload file **Rekap_FIB.csv** (atau file Excel Backup Anda) di bawah ini untuk mengembalikan seluruh data prodi yang hilang.")
                 
-            try:
-                with engine.connect() as conn:
-                    df_logs = pd.read_sql("SELECT * FROM rab_logs ORDER BY \"Waktu\" DESC LIMIT 500", conn)
+                file_cadangan = st.file_uploader("Upload File Backup CSV/Excel Anda di sini", type=["csv", "xlsx"])
+                if st.button("🚀 Jalankan Restore Data", type="primary"):
+                    if file_cadangan is not None:
+                        try:
+                            if file_cadangan.name.endswith('.csv'): df_pulih = pd.read_csv(file_cadangan)
+                            else: df_pulih = pd.read_excel(file_cadangan)
+                            
+                            kolom_wajib = ["Program_Studi", "Nama_Kegiatan", "Rincian_Belanja", "Volume", "Satuan", "Harga_Satuan", "Total_Usulan"]
+                            if all(k in df_pulih.columns for k in kolom_wajib):
+                                if "Tanggal_Input" not in df_pulih.columns: df_pulih["Tanggal_Input"] = "-"
+                                if "Prioritas" not in df_pulih.columns: df_pulih["Prioritas"] = "Sedang"
+                                if "Status" not in df_pulih.columns: df_pulih["Status"] = "Menunggu Review"
+                                if "Catatan_Fakultas" not in df_pulih.columns: df_pulih["Catatan_Fakultas"] = "-"
+                                if "File_TOR" not in df_pulih.columns: df_pulih["File_TOR"] = "-"
+                                save_data(df_pulih); st.success("🎉 Seluruh data telah berhasil dipulihkan!"); st.rerun()
+                            else: st.error("Gagal! Format kolom pada file yang diupload tidak cocok dengan database aplikasi.")
+                        except Exception as e: st.error(f"Kesalahan saat membaca file: {e}")
+                    else: st.error("Pilih file CSV atau Excel terlebih dahulu.")
+
+            with tab_log:
+                st.subheader("🕵️ CCTV Jejak Audit (Audit Trail)")
+                st.caption("Pantau seluruh perubahan dokumen RAB, penguncian versi, dan penghapusan data secara real-time yang dilakukan melalui modul Pengolah RAB.")
                 
-                if not df_logs.empty:
-                    st.dataframe(
-                        df_logs, 
-                        use_container_width=True, 
-                        hide_index=True,
-                        column_config={
-                            "Waktu": st.column_config.TextColumn("Waktu Eksekusi", width="medium"),
-                            "User": st.column_config.TextColumn("Pengguna", width="small"),
-                            "Aksi": st.column_config.TextColumn("Jenis Aksi", width="small"),
-                            "Detail": st.column_config.TextColumn("Rincian Aktivitas", width="large")
-                        }
-                    )
-                else:
-                    st.info("Belum ada aktivitas krusial yang terekam oleh CCTV.")
-            except Exception as e:
-                err_str = str(e).lower()
-                if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
-                    st.info("✅ Mesin CCTV sudah siaga. Menunggu aktivitas pertama terekam dari Modul RAB...")
-                else:
-                    st.error("Gagal memuat log aktivitas. Koneksi sedang sibuk.")
+                if st.button("🔄 Refresh Data CCTV"):
+                    st.rerun()
+                    
+                try:
+                    with engine.connect() as conn:
+                        df_logs = pd.read_sql("SELECT * FROM rab_logs ORDER BY \"Waktu\" DESC LIMIT 500", conn)
+                    
+                    if not df_logs.empty:
+                        st.dataframe(
+                            df_logs, 
+                            use_container_width=True, 
+                            hide_index=True,
+                            column_config={
+                                "Waktu": st.column_config.TextColumn("Waktu Eksekusi", width="medium"),
+                                "User": st.column_config.TextColumn("Pengguna", width="small"),
+                                "Aksi": st.column_config.TextColumn("Jenis Aksi", width="small"),
+                                "Detail": st.column_config.TextColumn("Rincian Aktivitas", width="large")
+                            }
+                        )
+                    else:
+                        st.info("Belum ada aktivitas krusial yang terekam oleh CCTV.")
+                except Exception as e:
+                    err_str = str(e).lower()
+                    if "does not exist" in err_str or "not found" in err_str or "relation" in err_str:
+                        st.info("✅ Mesin CCTV sudah siaga. Menunggu aktivitas pertama terekam dari Modul RAB...")
+                    else:
+                        st.error("Gagal memuat log aktivitas. Koneksi sedang sibuk.")
 
 # PASTIKAN BARIS INI ADA DI PALING BAWAH FILE:
 show_page()
