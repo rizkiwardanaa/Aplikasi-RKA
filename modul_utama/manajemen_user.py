@@ -45,7 +45,7 @@ with col_form:
         input_uname = st.text_input("Username (Tanpa Spasi, Huruf Kecil)")
         input_pass = st.text_input("Password", type="password")
         input_nama = st.text_input("Nama Tampil (Contoh: Sastra Jepang)")
-        input_role = st.selectbox("Role Identitas", ["prodi", "admin"])
+        input_role = st.selectbox("Role Identitas", ["prodi", "admin","dekan","wakil dekan","kabag"])
         
         # Pilihan Akses Menu dengan Checkbox/Multiselect
         akses_pilihan = st.multiselect(
