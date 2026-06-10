@@ -218,16 +218,23 @@ def show_page():
     elif role_user in ["admin", "pimpinan", "dekan", "wadek", "reviewer"]:
         st.title("📊 Dashboard Monitoring & Review")
         
-        # PERSIAPAN OPSI SOFT-MAPPING AKOMODASI (Ditarik dari RKAKL Aktif)
-        df_rab_aktif = load_table("rab_utama", ["Kegiatan", "Is_Active", "Tahun"], 'WHERE "Is_Active" = 1')
-        kegiatan_rkakl = sorted(df_rab_aktif['Kegiatan'].unique().tolist()) if not df_rab_aktif.empty else []
+# PERSIAPAN OPSI SOFT-MAPPING AKOMODASI (Ditarik dari RKAKL Aktif)
+        # Tambahkan pemanggilan kolom "Sumber_Dana"
+        df_rab_aktif = load_table("rab_utama", ["Kegiatan", "Sumber_Dana", "Is_Active", "Tahun"], 'WHERE "Is_Active" = 1')
         
-        # Menyusun Dropdown Hybrid (Statik + Dinamik)
+        if not df_rab_aktif.empty:
+            # Mengambil kombinasi unik Kegiatan dan Sumber Dana, lalu diurutkan
+            keg_unik = df_rab_aktif[['Kegiatan', 'Sumber_Dana']].drop_duplicates().sort_values(by='Kegiatan')
+            list_kegiatan_rkakl = [f"✅ Diakomodasi via RKAKL: {row['Kegiatan']} ({row['Sumber_Dana']})" for _, row in keg_unik.iterrows()]
+        else:
+            list_kegiatan_rkakl = []
+        
+        # Menyusun Dropdown Hybrid (Statik + Dinamik dengan Sumber Dana)
         opsi_akomodasi = [
             "- Belum Ditentukan -", 
             "⏳ Dianggarkan di Tahun Anggaran Selanjutnya", 
             "🔄 Dipertimbangkan masuk ke Revisi Anggaran Mendatang"
-        ] + [f"✅ Diakomodasi via RKAKL: {k}" for k in kegiatan_rkakl]
+        ] + list_kegiatan_rkakl
 
         col_info, col_toggle = st.columns([3, 1])
         with col_info: st.info("Gunakan tab di bawah untuk meninjau usulan dari setiap Program Studi.")
