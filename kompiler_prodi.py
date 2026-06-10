@@ -6,7 +6,6 @@ from utils import authenticate_user
 # ==========================================
 st.set_page_config(page_title="Sistem Perencanaan FIB", page_icon="📝", layout="wide")
 
-# Mengosongkan data keras (Hardcoded) dan menggantinya dengan session dinamis
 if "logged_in" not in st.session_state:
     st.session_state.update({
         "logged_in": False, 
@@ -26,7 +25,6 @@ if not st.session_state["logged_in"]:
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
             if st.form_submit_button("Masuk", type="primary"):
-                # Mengecek username dan password langsung ke Database PostgreSQL
                 user_data = authenticate_user(u, p)
                 if user_data:
                     st.session_state.update({
@@ -42,9 +40,8 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # ==========================================
-# NAVBAR BERJENJANG & HAK AKSES DINAMIS
+# NAVBAR BERJENJANG & HAK AKSES GRANULAR
 # ==========================================
-# 1. Mendefinisikan semua halaman yang ada
 page_kompiler = st.Page("modul_utama/modul_kompiler.py", title="Dashboard Monitoring", icon="📊")
 
 page_rab_master  = st.Page("modul_rab/rab_master.py", title="1. Master Data", icon="🗂️")
@@ -54,14 +51,12 @@ page_rab_rkakl   = st.Page("modul_rab/rab_rkakl.py", title="4. Rekap RKAKL", ico
 page_rab_matrik  = st.Page("modul_rab/rab_matrik.py", title="5. Matrik Perubahan", icon="⚖️")
 page_rab_warroom = st.Page("modul_rab/rab_warroom.py", title="6. Rapat Revisi", icon="🛠️")
 
-page_tor = st.Page("modul_ekstra/modul_tor.py", title="Generator TOR", icon="🤖")
-page_surat = st.Page("modul_ekstra/modul_surat.py", title="Generator Surat Otomatis", icon="✉️")
+page_tor     = st.Page("modul_ekstra/modul_tor.py", title="Generator TOR", icon="🤖")
 page_ekstrak = st.Page("modul_ekstra/modul_ekstrak_rkakl.py", title="Ekstrak RKAKL PDF", icon="📥")
+page_surat   = st.Page("modul_ekstra/modul_surat.py", title="Pengolah Surat", icon="✉️")
 
-# Halaman Khusus Super Admin
 page_users = st.Page("modul_utama/manajemen_user.py", title="Manajemen Pengguna", icon="👥")
 
-# 2. Mengatur Sidebar
 with st.sidebar:
     st.header("Sistem Perencanaan")
     st.markdown(f"👤 **{st.session_state['nama_user']}**")
@@ -70,27 +65,44 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# 3. Merakit Menu Berdasarkan Hak Akses dari Database
 akses_list = st.session_state["akses_menu"].split(",")
+
+# Mengakomodasi format lama jika masih ada yang pakai kata "rab" saja
+if "rab" in akses_list:
+    akses_list.extend(["rab_master", "rab_buat", "rab_arsip", "rab_rkakl", "rab_matrik", "rab_warroom"])
+
 nav_dict = {}
 
+# 1. Papan Kendali (Kompiler)
 if "kompiler" in akses_list:
     nav_dict["PAPAN KENDALI"] = [page_kompiler]
     
-if "rab" in akses_list:
-    nav_dict["MODUL ANGGARAN (RAB)"] = [page_rab_master, page_rab_buat, page_rab_arsip, page_rab_rkakl, page_rab_matrik, page_rab_warroom]
+# 2. Modul Anggaran (Check satu per satu tabnya)
+rab_pages = []
+if "rab_master" in akses_list: rab_pages.append(page_rab_master)
+if "rab_buat" in akses_list: rab_pages.append(page_rab_buat)
+if "rab_arsip" in akses_list: rab_pages.append(page_rab_arsip)
+if "rab_rkakl" in akses_list: rab_pages.append(page_rab_rkakl)
+if "rab_matrik" in akses_list: rab_pages.append(page_rab_matrik)
+if "rab_warroom" in akses_list: rab_pages.append(page_rab_warroom)
+
+if rab_pages:
+    nav_dict["MODUL ANGGARAN (RAB)"] = rab_pages
     
-if "tor" in akses_list or "ekstrak" in akses_list:
-    ekstra_pages = []
-    if "tor" in akses_list: ekstra_pages.append(page_tor)
-    if "ekstrak" in akses_list: ekstra_pages.append(page_ekstrak)
-    if "ekstrak" in akses_list: ekstra_pages.append(page_surat)
+# 3. Modul Ekstra
+ekstra_pages = []
+if "tor" in akses_list: ekstra_pages.append(page_tor)
+if "ekstrak" in akses_list: ekstra_pages.append(page_ekstrak)
+if "surat" in akses_list: ekstra_pages.append(page_surat)
+
+if ekstra_pages:
     nav_dict["MODUL EKSTRA"] = ekstra_pages
     
+# 4. Pengaturan Super Admin
 if "users" in akses_list and st.session_state["role"] == "admin":
     nav_dict["PENGATURAN SUPER ADMIN"] = [page_users]
 
-# Jika entah bagaimana user tidak punya akses apa-apa (Blank)
+# Fail-safe jika tidak ada akses satupun
 if not nav_dict:
     nav_dict["Akses Terbatas"] = [st.Page("modul_utama/modul_kompiler.py", title="Akses Ditolak", icon="🔒")]
 
