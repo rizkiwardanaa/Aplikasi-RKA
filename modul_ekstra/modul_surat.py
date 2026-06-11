@@ -9,12 +9,10 @@ import os
 import base64
 from datetime import datetime
 
-# Mengambil fungsi dari Gudang Inti
 from utils import log_audit, format_tgl_indo
 
 # --- FUNGSI BANTUAN MEMBACA GAMBAR ---
 def get_image_base64(image_path):
-    """Membaca file gambar lokal menjadi Base64 untuk disisipkan ke HTML"""
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode('utf-8')
@@ -31,8 +29,8 @@ def generate_surat_ai(hal, tujuan, isi_poin):
     
     ATURAN:
     1. Gunakan bahasa Indonesia baku dan formal.
-    2. Pembuka: Tuliskan 1 paragraf pengantar (Misal: "Menindaklanjuti surat dari...").
-    3. Isi: Jabarkan {isi_poin} dengan profesional dalam 1-2 paragraf yang mengalir.
+    2. Pembuka: Tuliskan 1 paragraf pengantar.
+    3. Isi: Jabarkan poin dengan profesional dalam 1-2 paragraf yang mengalir.
     4. Penutup: "Demikian kami sampaikan, atas kerjasamanya diucapkan terima kasih."
     
     Output JSON murni dengan kunci: "pembuka", "isi", "penutup".
@@ -47,8 +45,7 @@ def generate_surat_ai(hal, tujuan, isi_poin):
         
         model = genai.GenerativeModel(model_pilihan.replace("models/", ""))
         respons = model.generate_content(prompt)
-        return json.loads(respons.text.replace('```json', '').replace('
-```', '').strip())
+        return json.loads(respons.text.replace('```json', '').replace('```', '').strip())
     
     except Exception as e:
         if "429" in str(e):
@@ -62,28 +59,29 @@ def build_surat_docx(meta, narasi):
     doc = Document()
     
     section = doc.sections[0]
-    section.top_margin = Cm(1.5); section.bottom_margin = Cm(1.5)
-    section.left_margin = Cm(2.5); section.right_margin = Cm(2.5)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+    section.left_margin = Cm(2.5)
+    section.right_margin = Cm(2.5)
 
-    # HEADER GAMBAR (Jika ada file Header Kop Surat.jpg)
     if os.path.exists("Header Kop Surat.jpg"):
         p_kop = doc.add_paragraph()
         p_kop.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_kop.add_run().add_picture("Header Kop Surat.jpg", width=Cm(16))
     else:
-        # Fallback teks jika gambar tidak ada
         p_kop = doc.add_paragraph()
         p_kop.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_kop.add_run("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI\nUNIVERSITAS MULAWARMAN\nFAKULTAS ILMU BUDAYA\n").bold = True
         p_kop.add_run("Jl. Ki Hajar Dewantara, Kampus Gunung Kelua, Samarinda 75123\nTelepon (0541) 7809033")
     
-    doc.add_paragraph() # Spacing
+    doc.add_paragraph()
     
-    # METADATA (Nomor, Hal, Tanggal menggunakan Tabel)
     t_meta = doc.add_table(rows=3, cols=4)
     for row in t_meta.rows:
-        row.cells[0].width = Cm(2.0); row.cells[1].width = Cm(0.5)
-        row.cells[2].width = Cm(8.0); row.cells[3].width = Cm(5.0)
+        row.cells[0].width = Cm(2.0)
+        row.cells[1].width = Cm(0.5)
+        row.cells[2].width = Cm(8.0)
+        row.cells[3].width = Cm(5.0)
 
     t_meta.cell(0, 0).text = "Nomor"
     t_meta.cell(0, 1).text = ":"
@@ -99,11 +97,9 @@ def build_surat_docx(meta, narasi):
     t_meta.cell(2, 1).text = ":"
     t_meta.cell(2, 2).text = meta['hal']
 
-    # Tujuan
     p_tujuan = doc.add_paragraph()
-    p_tujuan.add_run(f"\nYth. {meta['tujuan']}\nSamarinda\n")
+    p_tujuan.add_run("\nYth. " + meta['tujuan'] + "\nSamarinda\n")
 
-    # ISI SURAT (Rata Kanan Kiri, Tanpa Tab Awal Paragraf)
     p_buka = doc.add_paragraph(narasi['pembuka'])
     p_buka.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     
@@ -113,19 +109,19 @@ def build_surat_docx(meta, narasi):
     p_tutup = doc.add_paragraph(narasi['penutup'])
     p_tutup.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     
-    # FOOTER / TTD 
     p_ttd = doc.add_paragraph()
     p_ttd.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     p_ttd.add_run("Dekan,\n\n\n\n")
-    p_ttd.add_run(f"{meta['dekan_nama']}\nNIP {meta['dekan_nip']}").bold = True
+    p_ttd.add_run(meta['dekan_nama'] + "\nNIP " + meta['dekan_nip']).bold = True
     
     doc.add_paragraph("\n")
     
-    # TABEL PARAF
     t_paraf = doc.add_table(rows=4, cols=3)
     t_paraf.style = 'Table Grid'
     for row in t_paraf.rows:
-        row.cells[0].width = Cm(1.0); row.cells[1].width = Cm(6.5); row.cells[2].width = Cm(2.5)
+        row.cells[0].width = Cm(1.0)
+        row.cells[1].width = Cm(6.5)
+        row.cells[2].width = Cm(2.5)
 
     data = [["NO", "JABATAN", "PARAF"], ["1", "Wakil Dekan Bidang Keuangan dan Umum", ""], ["2", "Kepala Bagian Umum", ""], ["3", "Staf Perencanaan", ""]]
     for i, row in enumerate(t_paraf.rows):
@@ -140,18 +136,27 @@ def build_surat_docx(meta, narasi):
 
 # --- BUILDER SURAT PDF (HTML DENGAN GAMBAR & WATERMARK) ---
 def generate_surat_html(meta, narasi):
-    # Cek dan konversi gambar ke Base64
     img_header = get_image_base64("Header Kop Surat.jpg")
     img_footer = get_image_base64("Footer Kop Surat.jpg")
     img_maskot = get_image_base64("Maskot Baru.png")
     
-    # Tentukan tag HTML jika gambar ditemukan
     html_header = f'<img src="data:image/jpeg;base64,{img_header}" class="header-img">' if img_header else '<h2 style="text-align:center;">[GAMBAR HEADER TIDAK DITEMUKAN]</h2><hr>'
     html_footer = f'<img src="data:image/jpeg;base64,{img_footer}" class="footer-img">' if img_footer else ''
     html_watermark = f'<img src="data:image/png;base64,{img_maskot}" class="watermark-img">' if img_maskot else ''
 
-    html = f"""
-    <!DOCTYPE html>
+    # PRE-FORMAT STRING AGAR AMAN DARI SYNTAX ERROR DI PYTHON CLOUD
+    tujuan_html = meta['tujuan'].replace('\n', '<br>')
+    nomor_surat = meta['nomor']
+    tgl_surat = meta['tgl_surat']
+    lampiran_surat = meta['lampiran']
+    hal_surat = meta['hal']
+    pembuka_surat = narasi['pembuka']
+    isi_surat = narasi['isi']
+    penutup_surat = narasi['penutup']
+    dekan_nama = meta['dekan_nama']
+    dekan_nip = meta['dekan_nip']
+
+    html = f"""<!DOCTYPE html>
     <html><head><meta charset="utf-8">
     <style>
         @page {{ size: A4 portrait; margin: 10mm; }}
@@ -162,12 +167,9 @@ def generate_surat_html(meta, narasi):
             color: #000; 
             text-align: justify; 
             position: relative;
-            padding-bottom: 120px; /* Ruang untuk footer */
+            padding-bottom: 120px;
         }}
-        
         .header-img {{ width: 100%; display: block; margin-bottom: 25px; }}
-        
-        /* Watermark di tengah, semi-transparan */
         .watermark-img {{ 
             position: fixed; 
             top: 50%; 
@@ -177,8 +179,6 @@ def generate_surat_html(meta, narasi):
             width: 450px; 
             z-index: -1; 
         }}
-        
-        /* Footer mekat di bawah */
         .footer-img {{ 
             position: fixed; 
             bottom: 0; 
@@ -186,23 +186,17 @@ def generate_surat_html(meta, narasi):
             width: 100%; 
             z-index: 10; 
         }}
-        
         table.meta-table {{ width: 100%; border-collapse: collapse; margin-bottom: 15px; border: none; }}
         table.meta-table td {{ padding: 1px; vertical-align: top; border: none; }}
-        
-        /* Paragraf Rata Kanan-Kiri, TANPA Indent/Tab di awal */
         .isi-surat p {{ 
             text-indent: 0; 
             margin-top: 5px; 
             margin-bottom: 15px; 
             text-align: justify; 
         }}
-        
         .tujuan {{ margin-bottom: 20px; margin-top: 15px; }}
-        
         .ttd-box {{ width: 250px; float: right; text-align: left; margin-top: 30px; }}
         .paraf-box {{ width: 320px; float: left; margin-top: 80px; clear: left; }}
-        
         table.paraf-table {{ width: 100%; border-collapse: collapse; font-size: 9.5pt; font-family: 'Arial', sans-serif; }}
         table.paraf-table th, table.paraf-table td {{ border: 1px solid black; padding: 4px 6px; }}
         table.paraf-table th {{ text-align: left; }}
@@ -214,28 +208,28 @@ def generate_surat_html(meta, narasi):
     
     <table class="meta-table">
         <tr>
-            <td style="width: 12%;">Nomor</td><td style="width: 2%;">:</td><td style="width: 56%;">{meta['nomor']}</td>
-            <td style="width: 30%; text-align: right;">{meta['tgl_surat']}</td>
+            <td style="width: 12%;">Nomor</td><td style="width: 2%;">:</td><td style="width: 56%;">{nomor_surat}</td>
+            <td style="width: 30%; text-align: right;">{tgl_surat}</td>
         </tr>
-        <tr><td>Lampiran</td><td>:</td><td colspan="2">{meta['lampiran']}</td></tr>
-        <tr><td>Hal</td><td>:</td><td colspan="2">{meta['hal']}</td></tr>
+        <tr><td>Lampiran</td><td>:</td><td colspan="2">{lampiran_surat}</td></tr>
+        <tr><td>Hal</td><td>:</td><td colspan="2">{hal_surat}</td></tr>
     </table>
     
     <div class="tujuan">
-        Yth. {meta['tujuan'].replace(chr(10), '<br>')}<br>
+        Yth. {tujuan_html}<br>
         Samarinda
     </div>
     
     <div class="isi-surat">
-        <p>{narasi['pembuka']}</p>
-        <p>{narasi['isi']}</p>
-        <p>{narasi['penutup']}</p>
+        <p>{pembuka_surat}</p>
+        <p>{isi_surat}</p>
+        <p>{penutup_surat}</p>
     </div>
     
     <div class="ttd-box">
         Dekan,<br><br><br><br><br>
-        <b>{meta['dekan_nama']}</b><br>
-        NIP {meta['dekan_nip']}
+        <b>{dekan_nama}</b><br>
+        NIP {dekan_nip}
     </div>
     
     <div class="paraf-box">
@@ -250,8 +244,7 @@ def generate_surat_html(meta, narasi):
     {html_footer}
     
     <div style="clear: both;"></div>
-    </body></html>
-    """
+    </body></html>"""
     return html
 
 # --- ANTARMUKA PENGGUNA (UI) ---
@@ -259,7 +252,6 @@ def show_page():
     st.title("✉️ Pengolah Surat Otomatis")
     st.caption("Didukung oleh Google Gemini AI. Menghasilkan surat dinas dengan kop gambar dan watermark.")
     
-    # Cek apakah file gambar tersedia
     missing_files = []
     if not os.path.exists("Header Kop Surat.jpg"): missing_files.append("Header Kop Surat.jpg")
     if not os.path.exists("Footer Kop Surat.jpg"): missing_files.append("Footer Kop Surat.jpg")
@@ -307,12 +299,16 @@ def show_page():
         
         st.markdown("### 🖨️ Cetak Dokumen")
         col_x1, col_x2 = st.columns(2)
+        
+        # Penanganan nama file agar aman
+        hal_safe = meta['hal'].replace(' ', '_')
+        
         with col_x1:
             file_word = build_surat_docx(meta, st.session_state['surat_narasi'])
             st.download_button(
                 label="📥 Download Surat (.docx)",
                 data=file_word,
-                file_name=f"Surat_{meta['hal'].replace(' ', '_')}.docx",
+                file_name=f"Surat_{hal_safe}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True
             )
@@ -322,7 +318,7 @@ def show_page():
             if st.download_button(
                 label="📑 Cetak PDF (Format Template Gambar)",
                 data=html_print.encode('utf-8'),
-                file_name=f"Surat_{meta['hal'].replace(' ', '_')}.html",
+                file_name=f"Surat_{hal_safe}.html",
                 mime="text/html",
                 use_container_width=True,
                 help="Buka file ini di browser Chrome/Edge, lalu tekan Ctrl+P. Gambar Header, Footer, dan Maskot akan otomatis termuat."
