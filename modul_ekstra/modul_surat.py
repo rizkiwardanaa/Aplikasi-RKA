@@ -154,7 +154,6 @@ def generate_surat_html(meta, narasi):
     <!DOCTYPE html>
     <html><head><meta charset="utf-8">
     <style>
-        /* Pengaturan margin halaman ditiadakan agar header bisa mepet jika perlu, kita atur padding di body */
         @page {{ size: A4 portrait; margin: 10mm; }}
         body {{ 
             font-family: 'Times New Roman', Times, serif; 
