@@ -6,7 +6,6 @@ from utils import load_table, get_available_years, split_kode, get_vol_sat_combi
 
 st.title("📂 Arsip & Manajemen Versi RAB")
 
-# --- LAZY LOADING ---
 list_tahun = get_available_years()
 tahun_aktif = st.sidebar.selectbox("📅 Pilih Tahun Anggaran Aktif:", list_tahun)
 
@@ -24,7 +23,6 @@ kegiatan_code_map = {keg: f"{i+1:04d}" for i, keg in enumerate(unique_kegiatans)
 
 if 'edit_rab_id' not in st.session_state: st.session_state.edit_rab_id = None
 
-# --- FUNGSI CETAK ---
 def export_excel_rab(df_header, df_items, kegiatan_code_map, tampilkan_paraf=False):
     import openpyxl
     from openpyxl.styles import Font, Alignment, Border, Side
@@ -182,16 +180,16 @@ def export_pdf_rab(df_header, df_items, orientasi, kegiatan_code_map, tampilkan_
     for head_col, indent, cls_row in [('RO', "", "ro-row"), ('Komponen', "  ", "komp-row"), ('Sub_Komponen', "    ", "sub-row")]:
         if df_header[head_col].iloc[0] and str(df_header[head_col].iloc[0]).strip() not in ["", "-", "Tidak Ada Sub-Komponen"]:
             k, u = split_kode(df_header[head_col].iloc[0])
-            html += f"<tr class='{cls_row} bold'><td>{k}</td><td>{indent}{u}</td><td></td><td></td><td class='right'>{format_rupiah(total_seluruh)}</td></tr>"
+            html += f"<tr class='{cls_row} bold'><td>{k}</td><td>{indent}{u}</td><td></td><td></td><td class='text-right'>{format_rupiah(total_seluruh)}</td></tr>"
     
-    html += f"<tr class='keg-row bold'><td>{keg_kode_full}</td><td style='padding-left:15px;'>{keg_nama_full}</td><td></td><td></td><td class='right'>{format_rupiah(total_seluruh)}</td></tr>"
+    html += f"<tr class='keg-row bold'><td>{keg_kode_full}</td><td style='padding-left:15px;'>{keg_nama_full}</td><td></td><td></td><td class='text-right'>{format_rupiah(total_seluruh)}</td></tr>"
 
     for akun, group_akun in df_items.groupby("Akun_Belanja"):
         k_ak, u_ak = split_kode(akun)
-        html += f"<tr class='akun-row bold'><td>{k_ak}</td><td style='padding-left:30px;'>{u_ak}</td><td></td><td></td><td class='right'>{format_rupiah(group_akun['Total_Biaya'].sum())}</td></tr>"
+        html += f"<tr class='akun-row bold'><td>{k_ak}</td><td style='padding-left:30px;'>{u_ak}</td><td></td><td></td><td class='text-right'>{format_rupiah(group_akun['Total_Biaya'].sum())}</td></tr>"
         for _, r in group_akun.iterrows():
             v_sat_str = get_vol_sat_combined(r['Vol_1'], r['Sat_1'], r['Vol_2'], r['Sat_2'])
-            html += f"<tr><td></td><td style='padding-left:45px;'>- {r['Uraian']}</td><td class='center'>{v_sat_str}</td><td class='right'>{format_rupiah(r['Harga_Satuan'])}</td><td class='right'>{format_rupiah(r['Total_Biaya'])}</td></tr>"
+            html += f"<tr><td></td><td style='padding-left:45px;'>- {r['Uraian']}</td><td class='text-center'>{v_sat_str}</td><td class='text-right'>{format_rupiah(r['Harga_Satuan'])}</td><td class='text-right'>{format_rupiah(r['Total_Biaya'])}</td></tr>"
     
     html += f"""</table>
     <div class="ttd-box">
@@ -203,10 +201,33 @@ def export_pdf_rab(df_header, df_items, orientasi, kegiatan_code_map, tampilkan_
     </body></html>"""
     return html
 
-# --- UI LOGIC ---
+# --- UI LOGIC & DUPLICATE CLEANER ---
 if df_rab_utama.empty: 
     st.info(f"Belum ada dokumen RAB untuk Tahun {tahun_aktif}.")
 else:
+    # --- FITUR PEMBERSIHAN DUPLIKASI ---
+    st.markdown("---")
+    with st.expander("🧹 Radar Pembersihan Duplikasi (Duplicate Cleaner)"):
+        st.info("Sistem akan memindai database tahun ini untuk mencari Kegiatan atau Rincian Belanja yang terinput ganda (duplikat).")
+        
+        dupe_utama = df_rab_utama.duplicated(subset=['Tahun', 'Sumber_Dana', 'Versi_RAB', 'Kegiatan'], keep='first')
+        dupe_detail = df_rab_detail.duplicated(subset=['ID_RAB', 'Akun_Belanja', 'Uraian', 'Vol_1', 'Vol_2', 'Total_Biaya'], keep='first')
+        
+        jml_dupe_utama = dupe_utama.sum()
+        jml_dupe_detail = dupe_detail.sum()
+        
+        if jml_dupe_utama > 0 or jml_dupe_detail > 0:
+            st.warning(f"🚨 **Terdeteksi Duplikasi Data:** Terdapat **{jml_dupe_utama} Kegiatan** ganda dan **{jml_dupe_detail} Rincian Belanja** ganda.")
+            if st.button("🗑️ Eksekusi: Hapus Seluruh Duplikasi Sekarang", type="primary"):
+                df_rab_utama_clean = df_rab_utama[~dupe_utama]
+                df_rab_detail_clean = df_rab_detail[~dupe_detail]
+                update_rab_tahun(df_rab_utama_clean, df_rab_detail_clean, tahun_aktif)
+                log_audit("HAPUS DUPLIKAT", f"Membersihkan {jml_dupe_utama} kegiatan & {jml_dupe_detail} rincian ganda.")
+                st.success("Tindakan berhasil! Database kini bersih dari duplikasi."); st.rerun()
+        else:
+            st.success("✨ Sempurna! Database Anda 100% bersih, tidak ada data ganda yang terdeteksi.")
+    st.markdown("---")
+
     col_a1, col_a2 = st.columns(2)
     versi_list_aktif = sorted(df_rab_utama['Versi_RAB'].unique())
     pilih_v_arsip = col_a1.selectbox("1. Pilih Versi (Untuk Difilter):", versi_list_aktif)
