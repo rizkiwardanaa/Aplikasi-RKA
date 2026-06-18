@@ -139,7 +139,7 @@ def parse_pdf_rkakl(file_bytes):
         line = line.strip()
         if not line: continue
 
-        # MENCEGAH SAMPAH HEADER / HALAMAN TERBACA SEBAGAI KODE
+        # --- FITUR BARU: MENCEGAH SAMPAH NOMOR HALAMAN/JAM TERBACA SEBAGAI KODE ---
         if "|" in line or "JAM]" in line: continue
 
         if re.match(r"^(KODE|PROGRAM/KEGIATAN|KOMPONEN|VOLUME|\(\d\)|TOTAL|Samarinda|Dekan|Prof\.|NIP\.)", line, re.IGNORECASE):
@@ -163,7 +163,9 @@ def parse_pdf_rkakl(file_bytes):
                 if re.match(r"^\d{6}$", kode):
                     curr_akun_code = kode; curr_akun_name = desc
                 elif re.match(r"^\d{4}$", kode):
-                    if not desc.lower().startswith("penyediaan"): curr_keg_name = desc
+                    # --- FITUR BARU: ABAIKAN KODE PROGRAM MAKRO SEPERTI 7729/7730 ---
+                    if not desc.lower().startswith("penyediaan") and kode not in ["7729", "7730"]: 
+                        curr_keg_name = desc
                 elif re.match(r"^\d{3}$", kode):
                     curr_komp = f"{kode} - {desc}"
                 elif re.match(r"^[A-Z]$", kode):
@@ -191,7 +193,7 @@ def parse_pdf_rkakl(file_bytes):
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. Mengamankan Master Data secara otomatis.")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. Mengamankan Master Data dengan Sistem Verifikasi Hierarki (Parent-Child).")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -202,7 +204,7 @@ def show_page():
         st.subheader("1. Setup Target Injeksi")
         col1, col2, col3 = st.columns(3)
         thn_target = col1.text_input("Tahun Anggaran", value=str(datetime.now().year + 1))
-        ver_target = col2.selectbox("Versi RKA", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6"])
+        ver_target = col2.selectbox("Versi RKA", ["Transisi","Indikatif", "Definitif", "Revisi 1", "Revisi 2", "Revisi 3", "Revisi 4", "Revisi 5", "Revisi 6", "Revisi 7", "Revisi 8", "Revisi 9", "Revisi 10","Revisi 11","Revisi 12","Revisi 13"])
         sumber_dana = col3.radio("Sumber Dana", ["BOPTN", "PNBP"], horizontal=True)
 
         file_pdf = st.file_uploader("2. Unggah Dokumen PDF RKAKL", type=['pdf'])
@@ -230,14 +232,14 @@ def show_page():
     if not st.session_state.ekstrak_result.empty:
         st.markdown("---")
         st.subheader("3. Ruang Karantina (Preview Data)")
-        st.info("Sistem ini HANYA menambahkan kode baru. Jika kode sudah ada di master, teks RKAKL ini akan otomatis disesuaikan dengan Master Anda tanpa merusaknya.")
+        st.info("Sistem HANYA menambahkan kode baru. Jika kode sudah ada di master, teks RKAKL ini akan otomatis disesuaikan dengan Master Anda tanpa merusaknya (Verifikasi Hierarki).")
         
         cols_order = ['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan', 'Akun_Code', 'Akun_Name', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']
         df_display = st.session_state.ekstrak_result[cols_order]
         df_edit = st.data_editor(df_display, num_rows="dynamic", use_container_width=True, height=400)
 
         if st.button("💾 Konfirmasi & Simpan Permanen ke Database", type="primary", use_container_width=True):
-            with st.spinner("Menyuntikkan data & Mengamankan Master..."):
+            with st.spinner("Menyuntikkan data & Mengamankan Master dengan Hierarki..."):
                 
                 df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
                 df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
@@ -254,45 +256,57 @@ def show_page():
                 else:
                     df_rab_detail = pd.DataFrame(columns=["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
                 
-                # --- AUTO-HEAL AMAN (MENGUTAMAKAN MASTER, TIDAK MENIMPA TEXT LAMA) ---
-                def map_to_master(val, df_m, col):
+                # --- FITUR BARU: HIERARCHICAL MAP TO MASTER ---
+                def map_to_master_hierarchical(val, df_m, col, parent_col=None, parent_val=None):
                     if val == "-" or df_m.empty or col not in df_m.columns: return val, True
                     k_code = split_kd(val)
+                    
                     mask = (df_m['Sumber_Dana'] == sumber_dana) & (df_m[col].astype(str).str.startswith(k_code + " -"))
+                    
+                    # Verifikasi apakah Induknya sama
+                    if parent_col and parent_val and parent_val != "-":
+                        mask = mask & (df_m[parent_col] == parent_val)
+                        
                     existing = df_m[mask]
                     if not existing.empty:
-                        return existing[col].iloc[0], False # Ditemukan di Master, Pakai Nama Master!
-                    return val, True # Tidak Ditemukan, Jadikan Data Baru
+                        return existing[col].iloc[0], False # Pakai data Master karena Induknya Valid
+                    return val, True # Jika Induk beda, buat baru
 
                 new_kro, new_ro, new_komp, new_sub, new_akun = [], [], [], [], []
 
                 for idx, r in df_edit.iterrows():
-                    m_kro, is_new_kro = map_to_master(r['KRO'], df_m_kro, 'KRO')
+                    # KRO
+                    m_kro, is_new_kro = map_to_master_hierarchical(r['KRO'], df_m_kro, 'KRO')
                     df_edit.at[idx, 'KRO'] = m_kro
                     if is_new_kro and m_kro not in [x['KRO'] for x in new_kro]: new_kro.append({"KRO": m_kro, "Sumber_Dana": sumber_dana})
 
-                    m_ro, is_new_ro = map_to_master(r['RO'], df_m_ro, 'RO')
+                    # RO (Harus sama KRO-nya)
+                    m_ro, is_new_ro = map_to_master_hierarchical(r['RO'], df_m_ro, 'RO', 'KRO', m_kro)
                     df_edit.at[idx, 'RO'] = m_ro
                     if is_new_ro and m_ro not in [x['RO'] for x in new_ro]: new_ro.append({"KRO": m_kro, "RO": m_ro, "Sumber_Dana": sumber_dana})
 
-                    m_komp, is_new_komp = map_to_master(r['Komponen'], df_m_komp, 'Komponen')
+                    # Komponen (Harus sama RO-nya)
+                    m_komp, is_new_komp = map_to_master_hierarchical(r['Komponen'], df_m_komp, 'Komponen', 'RO', m_ro)
                     df_edit.at[idx, 'Komponen'] = m_komp
                     if is_new_komp and m_komp not in [x['Komponen'] for x in new_komp]: new_komp.append({"RO": m_ro, "Komponen": m_komp, "Sumber_Dana": sumber_dana})
 
-                    m_sub, is_new_sub = map_to_master(r['Sub_Komponen'], df_m_sub, 'Sub_Komponen')
+                    # Sub Komponen (Harus sama Komponen-nya)
+                    m_sub, is_new_sub = map_to_master_hierarchical(r['Sub_Komponen'], df_m_sub, 'Sub_Komponen', 'Komponen', m_komp)
                     df_edit.at[idx, 'Sub_Komponen'] = m_sub
                     if is_new_sub and m_sub not in [x['Sub_Komponen'] for x in new_sub]: new_sub.append({"Komponen": m_komp, "Sub_Komponen": m_sub, "Sumber_Dana": sumber_dana})
 
-                    if r['Akun_Code'] != "-" and not df_m_akun.empty and 'Account_Code' in df_m_akun.columns:
-                        mask_akun = (df_m_akun['Sumber_Dana'] == sumber_dana) & (df_m_akun['Account_Code'] == r['Akun_Code'])
-                        ext_akun = df_m_akun[mask_akun]
-                        if not ext_akun.empty:
-                            df_edit.at[idx, 'Akun_Name'] = ext_akun['Account_Name'].iloc[0] 
+                    # Akun
+                    if r['Akun_Code'] != "-":
+                        if not df_m_akun.empty and 'Account_Code' in df_m_akun.columns:
+                            mask_akun = (df_m_akun['Sumber_Dana'] == sumber_dana) & (df_m_akun['Account_Code'] == r['Akun_Code']) & (df_m_akun['Sub_Komponen'] == m_sub)
+                            ext_akun = df_m_akun[mask_akun]
+                            if not ext_akun.empty:
+                                df_edit.at[idx, 'Akun_Name'] = ext_akun['Account_Name'].iloc[0] 
+                            else:
+                                if not any(x['Account_Code'] == r['Akun_Code'] and x['Sub_Komponen'] == m_sub for x in new_akun):
+                                    new_akun.append({"Sub_Komponen": m_sub, "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana})
                         else:
-                            if r['Akun_Code'] not in [x['Account_Code'] for x in new_akun]:
-                                new_akun.append({"Sub_Komponen": m_sub, "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana})
-                    elif r['Akun_Code'] != "-":
-                         if r['Akun_Code'] not in [x['Account_Code'] for x in new_akun]:
+                            if not any(x['Account_Code'] == r['Akun_Code'] and x['Sub_Komponen'] == m_sub for x in new_akun):
                                 new_akun.append({"Sub_Komponen": m_sub, "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana})
 
                 if new_kro: save_table(pd.concat([df_m_kro, pd.DataFrame(new_kro)], ignore_index=True), "rab_m_kro")
@@ -330,9 +344,9 @@ def show_page():
                 
                 save_success = update_rab_tahun(df_rab_utama, df_rab_detail, thn_target)
                 if save_success:
-                    log_audit("EKSTRAK PDF", f"Injeksi RKAKL {sumber_dana} tahun {thn_target}. Total Kegiatan: {len(kegiatan_unik)}")
+                    log_audit("EKSTRAK PDF", f"Injeksi otomatis data RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}). Total Kegiatan: {len(kegiatan_unik)}")
                     st.session_state.ekstrak_result = pd.DataFrame() 
-                    st.success("🎉 Berhasil diinjeksi! Master Data telah disinkronisasi tanpa merusak isian lama Anda.")
+                    st.success("🎉 Dokumen RKAKL berhasil diinjeksi dengan sistem Hierarki Aman tanpa merusak master!")
                     st.rerun()
 
 show_page()
