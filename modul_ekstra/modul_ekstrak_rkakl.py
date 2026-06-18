@@ -64,11 +64,14 @@ def parse_pdf_rkakl(file_bytes):
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
+        # --- PERBAIKAN: DITAMBAHKAN GELAR-GELAR AKADEMIK KE FILTER SAMPAH ---
         garbage_phrases = [
             r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
             r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
             r"\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)\s*\(\d\)", r"TOTAL\s+[\d\.,]+",
-            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+", r"Dekan,", r"Prof\.\s+Dr\..*", r"NIP\.\s*[\d-]+"
+            r"Samarinda,\s+\d+\s+[A-Za-z]+\s+\d+", r"Dekan,?", r"Prof\.\s+Dr\..*", r"NIP\.\s*[\d-]+",
+            r"\bM\.Hum\.?", r"\bS\.S\.,?", r"\bPh\.D\.?", r"\bM\.Kom\.?", r"\bS\.Kom\.?", 
+            r"\bS\.E\.,?", r"\bM\.E\.?", r"\bM\.Si\.?", r"\bS\.Si\.,?", r"\bM\.A\.?"
         ]
         for g in garbage_phrases:
             b_text = re.sub(g, "", b_text, flags=re.IGNORECASE)
@@ -139,7 +142,6 @@ def parse_pdf_rkakl(file_bytes):
         line = line.strip()
         if not line: continue
 
-        # --- FITUR BARU: MENCEGAH SAMPAH NOMOR HALAMAN/JAM TERBACA SEBAGAI KODE ---
         if "|" in line or "JAM]" in line: continue
 
         if re.match(r"^(KODE|PROGRAM/KEGIATAN|KOMPONEN|VOLUME|\(\d\)|TOTAL|Samarinda|Dekan|Prof\.|NIP\.)", line, re.IGNORECASE):
@@ -163,7 +165,6 @@ def parse_pdf_rkakl(file_bytes):
                 if re.match(r"^\d{6}$", kode):
                     curr_akun_code = kode; curr_akun_name = desc
                 elif re.match(r"^\d{4}$", kode):
-                    # --- FITUR BARU: ABAIKAN KODE PROGRAM MAKRO SEPERTI 7729/7730 ---
                     if not desc.lower().startswith("penyediaan") and kode not in ["7729", "7730"]: 
                         curr_keg_name = desc
                 elif re.match(r"^\d{3}$", kode):
@@ -176,11 +177,20 @@ def parse_pdf_rkakl(file_bytes):
                     curr_ro = f"{kode} - {desc}"
                 continue
 
-        if line.startswith("-") or line.startswith("["):
+        # --- PERBAIKAN: LOGIKA KURUNG SIKU PINTAR ---
+        if line.startswith("-") or line.startswith("[]") or line.startswith("[-]"):
             flush_buffer() 
             buffer_text = line
+        elif line.startswith("["): 
+            # Jika diawali kurung siku tapi BUKAN '[]', berarti itu info Volume ([15 ORANG...])
+            if buffer_text:
+                buffer_text += " " + line
+            else:
+                buffer_text = line
         elif buffer_text:
             buffer_text += " " + line
+        else:
+            buffer_text = line
             
     flush_buffer() 
 
@@ -256,46 +266,38 @@ def show_page():
                 else:
                     df_rab_detail = pd.DataFrame(columns=["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
                 
-                # --- FITUR BARU: HIERARCHICAL MAP TO MASTER ---
                 def map_to_master_hierarchical(val, df_m, col, parent_col=None, parent_val=None):
                     if val == "-" or df_m.empty or col not in df_m.columns: return val, True
                     k_code = split_kd(val)
-                    
                     mask = (df_m['Sumber_Dana'] == sumber_dana) & (df_m[col].astype(str).str.startswith(k_code + " -"))
                     
-                    # Verifikasi apakah Induknya sama
                     if parent_col and parent_val and parent_val != "-":
                         mask = mask & (df_m[parent_col] == parent_val)
                         
                     existing = df_m[mask]
                     if not existing.empty:
-                        return existing[col].iloc[0], False # Pakai data Master karena Induknya Valid
-                    return val, True # Jika Induk beda, buat baru
+                        return existing[col].iloc[0], False 
+                    return val, True 
 
                 new_kro, new_ro, new_komp, new_sub, new_akun = [], [], [], [], []
 
                 for idx, r in df_edit.iterrows():
-                    # KRO
                     m_kro, is_new_kro = map_to_master_hierarchical(r['KRO'], df_m_kro, 'KRO')
                     df_edit.at[idx, 'KRO'] = m_kro
                     if is_new_kro and m_kro not in [x['KRO'] for x in new_kro]: new_kro.append({"KRO": m_kro, "Sumber_Dana": sumber_dana})
 
-                    # RO (Harus sama KRO-nya)
                     m_ro, is_new_ro = map_to_master_hierarchical(r['RO'], df_m_ro, 'RO', 'KRO', m_kro)
                     df_edit.at[idx, 'RO'] = m_ro
                     if is_new_ro and m_ro not in [x['RO'] for x in new_ro]: new_ro.append({"KRO": m_kro, "RO": m_ro, "Sumber_Dana": sumber_dana})
 
-                    # Komponen (Harus sama RO-nya)
                     m_komp, is_new_komp = map_to_master_hierarchical(r['Komponen'], df_m_komp, 'Komponen', 'RO', m_ro)
                     df_edit.at[idx, 'Komponen'] = m_komp
                     if is_new_komp and m_komp not in [x['Komponen'] for x in new_komp]: new_komp.append({"RO": m_ro, "Komponen": m_komp, "Sumber_Dana": sumber_dana})
 
-                    # Sub Komponen (Harus sama Komponen-nya)
                     m_sub, is_new_sub = map_to_master_hierarchical(r['Sub_Komponen'], df_m_sub, 'Sub_Komponen', 'Komponen', m_komp)
                     df_edit.at[idx, 'Sub_Komponen'] = m_sub
                     if is_new_sub and m_sub not in [x['Sub_Komponen'] for x in new_sub]: new_sub.append({"Komponen": m_komp, "Sub_Komponen": m_sub, "Sumber_Dana": sumber_dana})
 
-                    # Akun
                     if r['Akun_Code'] != "-":
                         if not df_m_akun.empty and 'Account_Code' in df_m_akun.columns:
                             mask_akun = (df_m_akun['Sumber_Dana'] == sumber_dana) & (df_m_akun['Account_Code'] == r['Akun_Code']) & (df_m_akun['Sub_Komponen'] == m_sub)
@@ -315,7 +317,6 @@ def show_page():
                 if new_sub: save_table(pd.concat([df_m_sub, pd.DataFrame(new_sub)], ignore_index=True), "rab_m_subkomp")
                 if new_akun: save_table(pd.concat([df_m_akun, pd.DataFrame(new_akun)], ignore_index=True), "rab_m_akun")
                 
-                # INJEKSI KEGIATAN TAHUNAN
                 active_vs = df_rab_utama[(df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                 is_act = 1 if len(active_vs) == 0 or ver_target in active_vs else 0
 
