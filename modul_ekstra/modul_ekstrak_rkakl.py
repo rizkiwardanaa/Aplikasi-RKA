@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
-from utils import load_table, save_table, update_rab_tahun, log_audit
+from utils import load_table, save_table, update_rab_tahun, log_audit, format_rupiah
 
 try:
     import pdfplumber
@@ -56,7 +56,6 @@ def parse_pdf_rkakl(file_bytes):
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
-        # PERBAIKAN: Gelar akademik ditambahkan agar tidak bocor ke nama Uraian
         garbage_phrases = [
             r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
             r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
@@ -80,9 +79,6 @@ def parse_pdf_rkakl(file_bytes):
         clean_text = clean_text.replace(matched_str, " ")
         uraian_full = re.sub(r'\s+', ' ', clean_text).strip()
         
-        # PERBAIKAN FATAL: Dihapusnya fitur potong titik dua ":"
-        # Agar rincian seperti "Transport Bontang: Biaya Transportasi" tidak terpotong.
-        
         satuan_teks = ""
         match_sat = re.search(r"\[(.*?)\]", uraian_full)
         if match_sat:
@@ -94,7 +90,6 @@ def parse_pdf_rkakl(file_bytes):
                 satuan_teks = match_sat_open.group(1)
                 uraian_full = uraian_full.split("[")[0]
 
-        # PERBAIKAN: Membersihkan simbol bullet/kurung di awal uraian
         uraian_full = re.sub(r'\bFIB\b', '', uraian_full, flags=re.IGNORECASE)
         uraian_full = re.sub(r'^[-—*•>\[\]\s]+', '', uraian_full).strip(" -:")
         
@@ -172,7 +167,6 @@ def parse_pdf_rkakl(file_bytes):
                     curr_ro = f"{kode} - {desc}"
                 continue
 
-        # PERBAIKAN KURUNG SIKU: Pastikan volume tidak putus jika ter-enter di PDF
         if re.match(r"^([-—*•>]|\uf0b7|\[\]|\[-\])", line):
             flush_buffer() 
             buffer_text = line
@@ -339,7 +333,6 @@ def show_page():
                 
                 save_success = update_rab_tahun(df_rab_utama, df_rab_detail, thn_target)
                 if save_success:
-                    from utils import format_rupiah
                     log_audit("EKSTRAK PDF", f"Injeksi otomatis data RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}). Total Kegiatan: {len(kegiatan_unik)}")
                     st.session_state.ekstrak_result = pd.DataFrame() 
                     st.success("🎉 Dokumen RKAKL berhasil diinjeksi dengan sistem Hierarki Aman tanpa merusak master!")
