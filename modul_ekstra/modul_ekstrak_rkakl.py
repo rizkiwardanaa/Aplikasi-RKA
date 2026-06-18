@@ -19,7 +19,7 @@ def split_kd(teks):
 # --- FUNGSI VERIFIKASI MATEMATIKA (V * H = T) ---
 def extract_vht(text):
     tokens = text.split()
-    for i in range(len(tokens) - 2):
+    for i in reversed(range(len(tokens) - 2)):
         t1 = tokens[i].replace(',', '').replace('.', '')
         t2 = tokens[i+1].replace(',', '').replace('.', '')
         t3 = tokens[i+2].replace(',', '').replace('.', '')
@@ -29,14 +29,6 @@ def extract_vht(text):
             if v * h == t and t > 0:
                 return v, h, t, f"{tokens[i]} {tokens[i+1]} {tokens[i+2]}"
                 
-    for i in reversed(range(len(tokens) - 2)):
-        t1 = tokens[i].replace(',', '').replace('.', '')
-        t2 = tokens[i+1].replace(',', '').replace('.', '')
-        t3 = tokens[i+2].replace(',', '').replace('.', '')
-        
-        if t1.isdigit() and t2.isdigit() and t3.isdigit():
-            return int(t1), int(t2), int(t3), f"{tokens[i]} {tokens[i+1]} {tokens[i+2]}"
-            
     return None, None, None, None
 
 # --- MESIN PISAU PYTHON (LEAK-PROOF PARSER) ---
@@ -64,7 +56,7 @@ def parse_pdf_rkakl(file_bytes):
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
-        # --- PERBAIKAN: DITAMBAHKAN GELAR-GELAR AKADEMIK KE FILTER SAMPAH ---
+        # PERBAIKAN: Gelar akademik ditambahkan agar tidak bocor ke nama Uraian
         garbage_phrases = [
             r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
             r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
@@ -86,11 +78,11 @@ def parse_pdf_rkakl(file_bytes):
             return None
             
         clean_text = clean_text.replace(matched_str, " ")
-        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        uraian_full = re.sub(r'\s+', ' ', clean_text).strip()
         
-        uraian_full = clean_text
-        if ":" in uraian_full: uraian_full = uraian_full.split(":", 1)[1].strip()
-
+        # PERBAIKAN FATAL: Dihapusnya fitur potong titik dua ":"
+        # Agar rincian seperti "Transport Bontang: Biaya Transportasi" tidak terpotong.
+        
         satuan_teks = ""
         match_sat = re.search(r"\[(.*?)\]", uraian_full)
         if match_sat:
@@ -102,7 +94,10 @@ def parse_pdf_rkakl(file_bytes):
                 satuan_teks = match_sat_open.group(1)
                 uraian_full = uraian_full.split("[")[0]
 
-        uraian_full = re.sub(r'\bFIB\b', '', uraian_full, flags=re.IGNORECASE).strip(" -[]")
+        # PERBAIKAN: Membersihkan simbol bullet/kurung di awal uraian
+        uraian_full = re.sub(r'\bFIB\b', '', uraian_full, flags=re.IGNORECASE)
+        uraian_full = re.sub(r'^[-—*•>\[\]\s]+', '', uraian_full).strip(" -:")
+        
         satuan_teks = re.sub(r'\bFIB\b', '', satuan_teks, flags=re.IGNORECASE).strip(" -[]")
 
         v1, s1, v2, s2 = vol, "Layanan", 1, "-"
@@ -177,12 +172,11 @@ def parse_pdf_rkakl(file_bytes):
                     curr_ro = f"{kode} - {desc}"
                 continue
 
-        # --- PERBAIKAN: LOGIKA KURUNG SIKU PINTAR ---
-        if line.startswith("-") or line.startswith("[]") or line.startswith("[-]"):
+        # PERBAIKAN KURUNG SIKU: Pastikan volume tidak putus jika ter-enter di PDF
+        if re.match(r"^([-—*•>]|\uf0b7|\[\]|\[-\])", line):
             flush_buffer() 
             buffer_text = line
         elif line.startswith("["): 
-            # Jika diawali kurung siku tapi BUKAN '[]', berarti itu info Volume ([15 ORANG...])
             if buffer_text:
                 buffer_text += " " + line
             else:
@@ -227,7 +221,7 @@ def show_page():
                     
                     if not df_hasil.empty:
                         st.session_state.ekstrak_result = df_hasil
-                        st.success(f"Berhasil mengekstrak {len(df_hasil)} baris rincian belanja bersih!")
+                        st.success(f"Berhasil mengekstrak {len(df_hasil)} baris rincian belanja bersih! Total Ekstraksi: Rp {format_rupiah(df_hasil['Total_Biaya'].sum())}")
                     else:
                         st.error("❌ Gagal mengekstrak rincian belanja.")
             else:
@@ -345,6 +339,7 @@ def show_page():
                 
                 save_success = update_rab_tahun(df_rab_utama, df_rab_detail, thn_target)
                 if save_success:
+                    from utils import format_rupiah
                     log_audit("EKSTRAK PDF", f"Injeksi otomatis data RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}). Total Kegiatan: {len(kegiatan_unik)}")
                     st.session_state.ekstrak_result = pd.DataFrame() 
                     st.success("🎉 Dokumen RKAKL berhasil diinjeksi dengan sistem Hierarki Aman tanpa merusak master!")
