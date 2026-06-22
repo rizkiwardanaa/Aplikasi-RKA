@@ -56,6 +56,7 @@ def parse_pdf_rkakl(file_bytes):
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
+        # 1. TONG SAMPAH PDF (Ditambahkan Gelar Akademik agar tidak bocor)
         garbage_phrases = [
             r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
             r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
@@ -79,6 +80,12 @@ def parse_pdf_rkakl(file_bytes):
         clean_text = clean_text.replace(matched_str, " ")
         uraian_full = re.sub(r'\s+', ' ', clean_text).strip()
         
+        # 2. HAPUS PREFIX KOSONG SEBELUM MENCARI VOLUME
+        # Ini mencegah [] PNBP menutupi [4 UNIT x 1 TAHUN]
+        uraian_full = uraian_full.replace("[]", "").replace("[-]", "").replace("[ - ]", "")
+        uraian_full = re.sub(r'^[-—*•>\uf0b7\s]+', '', uraian_full).strip()
+        
+        # 3. EKSTRAKSI VOLUME
         satuan_teks = ""
         match_sat = re.search(r"\[(.*?)\]", uraian_full)
         if match_sat:
@@ -90,8 +97,9 @@ def parse_pdf_rkakl(file_bytes):
                 satuan_teks = match_sat_open.group(1)
                 uraian_full = uraian_full.split("[")[0]
 
+        # 4. PEMBERSIHAN AKHIR URAIAN
         uraian_full = re.sub(r'\bFIB\b', '', uraian_full, flags=re.IGNORECASE)
-        uraian_full = re.sub(r'^[-—*•>\[\]\s]+', '', uraian_full).strip(" -:")
+        uraian_full = uraian_full.strip(" -:")
         
         satuan_teks = re.sub(r'\bFIB\b', '', satuan_teks, flags=re.IGNORECASE).strip(" -[]")
 
@@ -113,7 +121,7 @@ def parse_pdf_rkakl(file_bytes):
                 
         if v1 * v2 != vol: v1, v2, s2 = vol, 1, "-"
 
-        debug_logs.append(f"✅ SUKSES: {uraian_full}")
+        debug_logs.append(f"✅ SUKSES: {uraian_full} | Vol: {satuan_teks}")
         return {
             "KRO": kro, "RO": ro, "Komponen": komp, "Sub_Komponen": sub,
             "Kegiatan": keg, "Akun_Code": a_code, "Akun_Name": a_name,
