@@ -2,19 +2,12 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
-from utils import load_table, save_table, update_rab_tahun, log_audit, format_rupiah
+from utils import load_table, update_rab_tahun, log_audit, format_rupiah
 
 try:
     import pdfplumber
 except ImportError:
     st.error("⚠️ Pustaka pdfplumber belum terinstal. Pastikan file requirements.txt sudah di-update.")
-
-# --- FUNGSI PEMISAH KODE UNTUK AUTO-HEAL ---
-def split_kd(teks):
-    s = str(teks).strip()
-    if " - " in s:
-        return s.split(" - ", 1)[0].strip()
-    return s
 
 # --- FUNGSI VERIFIKASI MATEMATIKA (V * H = T) ---
 def extract_vht(text):
@@ -56,7 +49,6 @@ def parse_pdf_rkakl(file_bytes):
     buffer_text = ""
 
     def process_buffer(b_text, kro, ro, komp, sub, keg, a_code, a_name):
-        # 1. TONG SAMPAH PDF (Ditambahkan Gelar Akademik agar tidak bocor)
         garbage_phrases = [
             r"KODE\s+PROGRAM/KEGIATAN.*?(?=\s|$)", r"KOMPONEN/SUBKOMP.*?(?=\s|$)",
             r"VOLUME\s+HARGA\s+SATUAN.*?(?=\s|$)", r"TAHUN\s+SUMBER", r"TARGET",
@@ -80,12 +72,9 @@ def parse_pdf_rkakl(file_bytes):
         clean_text = clean_text.replace(matched_str, " ")
         uraian_full = re.sub(r'\s+', ' ', clean_text).strip()
         
-        # 2. HAPUS PREFIX KOSONG SEBELUM MENCARI VOLUME
-        # Ini mencegah [] PNBP menutupi [4 UNIT x 1 TAHUN]
         uraian_full = uraian_full.replace("[]", "").replace("[-]", "").replace("[ - ]", "")
         uraian_full = re.sub(r'^[-—*•>\uf0b7\s]+', '', uraian_full).strip()
         
-        # 3. EKSTRAKSI VOLUME
         satuan_teks = ""
         match_sat = re.search(r"\[(.*?)\]", uraian_full)
         if match_sat:
@@ -97,7 +86,6 @@ def parse_pdf_rkakl(file_bytes):
                 satuan_teks = match_sat_open.group(1)
                 uraian_full = uraian_full.split("[")[0]
 
-        # 4. PEMBERSIHAN AKHIR URAIAN
         uraian_full = re.sub(r'\bFIB\b', '', uraian_full, flags=re.IGNORECASE)
         uraian_full = uraian_full.strip(" -:")
         
@@ -167,12 +155,21 @@ def parse_pdf_rkakl(file_bytes):
                         curr_keg_name = desc
                 elif re.match(r"^\d{3}$", kode):
                     curr_komp = f"{kode} - {desc}"
+                    # LOGIKA RESET SUBKOMPONEN (Mencegah terbawa dari Komponen sebelumnya)
+                    curr_subkomp = "-"
                 elif re.match(r"^[A-Z]$", kode):
                     curr_subkomp = f"{kode} - {desc}"
                 elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}$", kode):
                     curr_kro = f"{kode} - {desc}"
+                    # LOGIKA RESET CASCADING MUTLAK
+                    curr_ro = "-"
+                    curr_komp = "-"
+                    curr_subkomp = "-"
                 elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode):
                     curr_ro = f"{kode} - {desc}"
+                    # LOGIKA RESET KOMP & SUB
+                    curr_komp = "-"
+                    curr_subkomp = "-"
                 continue
 
         if re.match(r"^([-—*•>]|\uf0b7|\[\]|\[-\])", line):
@@ -199,7 +196,7 @@ def parse_pdf_rkakl(file_bytes):
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. Mengamankan Master Data dengan Sistem Verifikasi Hierarki (Parent-Child).")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. (Mode Aman: Mengekstrak murni tanpa mengubah Data Master).")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -217,7 +214,7 @@ def show_page():
         
         if st.button("🚀 Ekstrak Dokumen Sekarang", type="primary"):
             if file_pdf:
-                with st.spinner("Menganalisis hirarki & Membuang noise sampah PDF..."):
+                with st.spinner("Menganalisis hirarki (Cascading Reset) & Mengekstrak PDF..."):
                     df_hasil, log_debug = parse_pdf_rkakl(file_pdf)
                     st.session_state.ekstrak_log = log_debug
                     
@@ -238,20 +235,14 @@ def show_page():
     if not st.session_state.ekstrak_result.empty:
         st.markdown("---")
         st.subheader("3. Ruang Karantina (Preview Data)")
-        st.info("Sistem HANYA menambahkan kode baru. Jika kode sudah ada di master, teks RKAKL ini akan otomatis disesuaikan dengan Master Anda tanpa merusaknya (Verifikasi Hierarki).")
+        st.info("Sistem ini kini membaca murni sesuai urutan PDF. Fitur Auto-Heal (yang merusak Master) telah dinonaktifkan sepenuhnya.")
         
         cols_order = ['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan', 'Akun_Code', 'Akun_Name', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']
         df_display = st.session_state.ekstrak_result[cols_order]
         df_edit = st.data_editor(df_display, num_rows="dynamic", use_container_width=True, height=400)
 
-        if st.button("💾 Konfirmasi & Simpan Permanen ke Database", type="primary", use_container_width=True):
-            with st.spinner("Menyuntikkan data & Mengamankan Master dengan Hierarki..."):
-                
-                df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
-                df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
-                df_m_komp = load_table("rab_m_komp", ["RO", "Komponen", "Sumber_Dana"])
-                df_m_sub = load_table("rab_m_subkomp", ["Komponen", "Sub_Komponen", "Sumber_Dana"])
-                df_m_akun = load_table("rab_m_akun", ["Sub_Komponen", "Account_Code", "Account_Name", "Sumber_Dana"])
+        if st.button("💾 Konfirmasi & Simpan ke Database RAB", type="primary", use_container_width=True):
+            with st.spinner("Menyuntikkan data murni ke tabel Kegiatan..."):
                 
                 df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat", "Versi_RAB", "Is_Active", "Catatan"], f"WHERE \"Tahun\" = '{thn_target}'")
                 
@@ -261,57 +252,6 @@ def show_page():
                     df_rab_detail = load_table("rab_detail", ["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"], where_det)
                 else:
                     df_rab_detail = pd.DataFrame(columns=["ID_RAB", "Akun_Belanja", "Uraian", "Vol_1", "Sat_1", "Vol_2", "Sat_2", "Harga_Satuan", "Total_Biaya"])
-                
-                def map_to_master_hierarchical(val, df_m, col, parent_col=None, parent_val=None):
-                    if val == "-" or df_m.empty or col not in df_m.columns: return val, True
-                    k_code = split_kd(val)
-                    mask = (df_m['Sumber_Dana'] == sumber_dana) & (df_m[col].astype(str).str.startswith(k_code + " -"))
-                    
-                    if parent_col and parent_val and parent_val != "-":
-                        mask = mask & (df_m[parent_col] == parent_val)
-                        
-                    existing = df_m[mask]
-                    if not existing.empty:
-                        return existing[col].iloc[0], False 
-                    return val, True 
-
-                new_kro, new_ro, new_komp, new_sub, new_akun = [], [], [], [], []
-
-                for idx, r in df_edit.iterrows():
-                    m_kro, is_new_kro = map_to_master_hierarchical(r['KRO'], df_m_kro, 'KRO')
-                    df_edit.at[idx, 'KRO'] = m_kro
-                    if is_new_kro and m_kro not in [x['KRO'] for x in new_kro]: new_kro.append({"KRO": m_kro, "Sumber_Dana": sumber_dana})
-
-                    m_ro, is_new_ro = map_to_master_hierarchical(r['RO'], df_m_ro, 'RO', 'KRO', m_kro)
-                    df_edit.at[idx, 'RO'] = m_ro
-                    if is_new_ro and m_ro not in [x['RO'] for x in new_ro]: new_ro.append({"KRO": m_kro, "RO": m_ro, "Sumber_Dana": sumber_dana})
-
-                    m_komp, is_new_komp = map_to_master_hierarchical(r['Komponen'], df_m_komp, 'Komponen', 'RO', m_ro)
-                    df_edit.at[idx, 'Komponen'] = m_komp
-                    if is_new_komp and m_komp not in [x['Komponen'] for x in new_komp]: new_komp.append({"RO": m_ro, "Komponen": m_komp, "Sumber_Dana": sumber_dana})
-
-                    m_sub, is_new_sub = map_to_master_hierarchical(r['Sub_Komponen'], df_m_sub, 'Sub_Komponen', 'Komponen', m_komp)
-                    df_edit.at[idx, 'Sub_Komponen'] = m_sub
-                    if is_new_sub and m_sub not in [x['Sub_Komponen'] for x in new_sub]: new_sub.append({"Komponen": m_komp, "Sub_Komponen": m_sub, "Sumber_Dana": sumber_dana})
-
-                    if r['Akun_Code'] != "-":
-                        if not df_m_akun.empty and 'Account_Code' in df_m_akun.columns:
-                            mask_akun = (df_m_akun['Sumber_Dana'] == sumber_dana) & (df_m_akun['Account_Code'] == r['Akun_Code']) & (df_m_akun['Sub_Komponen'] == m_sub)
-                            ext_akun = df_m_akun[mask_akun]
-                            if not ext_akun.empty:
-                                df_edit.at[idx, 'Akun_Name'] = ext_akun['Account_Name'].iloc[0] 
-                            else:
-                                if not any(x['Account_Code'] == r['Akun_Code'] and x['Sub_Komponen'] == m_sub for x in new_akun):
-                                    new_akun.append({"Sub_Komponen": m_sub, "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana})
-                        else:
-                            if not any(x['Account_Code'] == r['Akun_Code'] and x['Sub_Komponen'] == m_sub for x in new_akun):
-                                new_akun.append({"Sub_Komponen": m_sub, "Account_Code": r['Akun_Code'], "Account_Name": r['Akun_Name'], "Sumber_Dana": sumber_dana})
-
-                if new_kro: save_table(pd.concat([df_m_kro, pd.DataFrame(new_kro)], ignore_index=True), "rab_m_kro")
-                if new_ro: save_table(pd.concat([df_m_ro, pd.DataFrame(new_ro)], ignore_index=True), "rab_m_ro")
-                if new_komp: save_table(pd.concat([df_m_komp, pd.DataFrame(new_komp)], ignore_index=True), "rab_m_komp")
-                if new_sub: save_table(pd.concat([df_m_sub, pd.DataFrame(new_sub)], ignore_index=True), "rab_m_subkomp")
-                if new_akun: save_table(pd.concat([df_m_akun, pd.DataFrame(new_akun)], ignore_index=True), "rab_m_akun")
                 
                 active_vs = df_rab_utama[(df_rab_utama['Is_Active'] == 1)]['Versi_RAB'].unique()
                 is_act = 1 if len(active_vs) == 0 or ver_target in active_vs else 0
@@ -341,9 +281,9 @@ def show_page():
                 
                 save_success = update_rab_tahun(df_rab_utama, df_rab_detail, thn_target)
                 if save_success:
-                    log_audit("EKSTRAK PDF", f"Injeksi otomatis data RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}). Total Kegiatan: {len(kegiatan_unik)}")
+                    log_audit("EKSTRAK PDF", f"Injeksi murni RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}).")
                     st.session_state.ekstrak_result = pd.DataFrame() 
-                    st.success("🎉 Dokumen RKAKL berhasil diinjeksi dengan sistem Hierarki Aman tanpa merusak master!")
+                    st.success("🎉 Dokumen RKAKL berhasil diinjeksi! Data masuk murni tanpa mengubah Data Master Anda sedikit pun.")
                     st.rerun()
 
 show_page()
