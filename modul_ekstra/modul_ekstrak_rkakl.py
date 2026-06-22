@@ -2,12 +2,23 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
-from utils import load_table, update_rab_tahun, log_audit, format_rupiah
+from utils import load_table, save_table, update_rab_tahun, log_audit, format_rupiah
 
 try:
     import pdfplumber
 except ImportError:
     st.error("⚠️ Pustaka pdfplumber belum terinstal. Pastikan file requirements.txt sudah di-update.")
+
+# --- FUNGSI PEMISAH KODE UNTUK SINKRONISASI MASTER ---
+def split_kd(teks):
+    s = str(teks).strip()
+    if " - " in s:
+        return s.split(" - ", 1)[0].strip()
+    if re.match(r"^[A-Z]\.\s+", s):
+        return s.split(".", 1)[0].strip()
+    if re.match(r"^[A-Z]\s+", s):
+        return s.split(" ", 1)[0].strip()
+    return s
 
 # --- FUNGSI VERIFIKASI MATEMATIKA (V * H = T) ---
 def extract_vht(text):
@@ -138,6 +149,9 @@ def parse_pdf_rkakl(file_bytes):
             kode = match_kode.group(1)
             desc = re.sub(r"[\d\.,]+\s*(BOPTN|PNBP|BLU)?$", "", match_kode.group(2), flags=re.IGNORECASE).strip()
             
+            if re.match(r"^[A-Z]\.$", kode):
+                kode = kode[0]
+
             is_valid_kode = False
             if re.match(r"^\d{6}$", kode): is_valid_kode = True
             elif re.match(r"^\d{4}$", kode): is_valid_kode = True
@@ -155,19 +169,16 @@ def parse_pdf_rkakl(file_bytes):
                         curr_keg_name = desc
                 elif re.match(r"^\d{3}$", kode):
                     curr_komp = f"{kode} - {desc}"
-                    # LOGIKA RESET SUBKOMPONEN (Mencegah terbawa dari Komponen sebelumnya)
                     curr_subkomp = "-"
                 elif re.match(r"^[A-Z]$", kode):
                     curr_subkomp = f"{kode} - {desc}"
                 elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}$", kode):
                     curr_kro = f"{kode} - {desc}"
-                    # LOGIKA RESET CASCADING MUTLAK
                     curr_ro = "-"
                     curr_komp = "-"
                     curr_subkomp = "-"
                 elif re.match(r"^\d{4}\.[A-Z0-9]{1,3}\.\d{1,3}$", kode):
                     curr_ro = f"{kode} - {desc}"
-                    # LOGIKA RESET KOMP & SUB
                     curr_komp = "-"
                     curr_subkomp = "-"
                 continue
@@ -196,7 +207,7 @@ def parse_pdf_rkakl(file_bytes):
 # --- TAMPILAN ANTARMUKA (UI) ---
 def show_page():
     st.title("📥 Mesin Ekstraksi RKAKL Otomatis")
-    st.caption("Unggah PDF RKAKL dari sistem Universitas. (Mode Aman: Mengekstrak murni tanpa mengubah Data Master).")
+    st.caption("Unggah PDF RKAKL dari sistem Universitas. (Mode Aman: Master Lock tanpa Auto-Heal).")
 
     if 'ekstrak_result' not in st.session_state:
         st.session_state.ekstrak_result = pd.DataFrame()
@@ -214,11 +225,53 @@ def show_page():
         
         if st.button("🚀 Ekstrak Dokumen Sekarang", type="primary"):
             if file_pdf:
-                with st.spinner("Menganalisis hirarki (Cascading Reset) & Mengekstrak PDF..."):
+                with st.spinner("Menganalisis & Menyinkronkan Hierarki dengan Master..."):
                     df_hasil, log_debug = parse_pdf_rkakl(file_pdf)
                     st.session_state.ekstrak_log = log_debug
                     
                     if not df_hasil.empty:
+                        # --- PENYELARASAN MUTLAK KE MASTER (TANPA MENGUBAH MASTER) ---
+                        df_m_kro = load_table("rab_m_kro", ["KRO", "Sumber_Dana"])
+                        df_m_ro = load_table("rab_m_ro", ["KRO", "RO", "Sumber_Dana"])
+                        df_m_komp = load_table("rab_m_komp", ["RO", "Komponen", "Sumber_Dana"])
+                        df_m_sub = load_table("rab_m_subkomp", ["Komponen", "Sub_Komponen", "Sumber_Dana"])
+                        df_m_akun = load_table("rab_m_akun", ["Sub_Komponen", "Account_Code", "Account_Name", "Sumber_Dana"])
+
+                        def get_master_val(kode, original_val, df_m, col, parent_col=None, parent_val=None, sd="BOPTN"):
+                            if kode == "-" or df_m.empty or col not in df_m.columns: return original_val
+                            mask = df_m['Sumber_Dana'] == sd
+                            if parent_col and parent_val and parent_val != "-":
+                                mask = mask & (df_m[parent_col] == parent_val)
+                            filtered_df = df_m[mask]
+                            for _, row in filtered_df.iterrows():
+                                if split_kd(row[col]) == kode:
+                                    return row[col] # Memaksa teks PDF mengikuti Nama di Master!
+                            return original_val
+
+                        for idx, r in df_hasil.iterrows():
+                            kro_code = split_kd(r['KRO'])
+                            ro_code = split_kd(r['RO'])
+                            komp_code = split_kd(r['Komponen'])
+                            sub_code = split_kd(r['Sub_Komponen'])
+                            
+                            m_kro = get_master_val(kro_code, r['KRO'], df_m_kro, 'KRO', sd=sumber_dana)
+                            m_ro = get_master_val(ro_code, r['RO'], df_m_ro, 'RO', 'KRO', m_kro, sd=sumber_dana)
+                            m_komp = get_master_val(komp_code, r['Komponen'], df_m_komp, 'Komponen', 'RO', m_ro, sd=sumber_dana)
+                            m_sub = get_master_val(sub_code, r['Sub_Komponen'], df_m_sub, 'Sub_Komponen', 'Komponen', m_komp, sd=sumber_dana)
+                            
+                            m_akun_name = r['Akun_Name']
+                            if r['Akun_Code'] != "-" and not df_m_akun.empty:
+                                mask_a = (df_m_akun['Sumber_Dana'] == sumber_dana) & (df_m_akun['Account_Code'] == r['Akun_Code']) & (df_m_akun['Sub_Komponen'] == m_sub)
+                                match_a = df_m_akun[mask_a]
+                                if not match_a.empty:
+                                    m_akun_name = match_a['Account_Name'].iloc[0]
+
+                            df_hasil.at[idx, 'KRO'] = m_kro
+                            df_hasil.at[idx, 'RO'] = m_ro
+                            df_hasil.at[idx, 'Komponen'] = m_komp
+                            df_hasil.at[idx, 'Sub_Komponen'] = m_sub
+                            df_hasil.at[idx, 'Akun_Name'] = m_akun_name
+
                         st.session_state.ekstrak_result = df_hasil
                         st.success(f"Berhasil mengekstrak {len(df_hasil)} baris rincian belanja bersih! Total Ekstraksi: Rp {format_rupiah(df_hasil['Total_Biaya'].sum())}")
                     else:
@@ -235,13 +288,13 @@ def show_page():
     if not st.session_state.ekstrak_result.empty:
         st.markdown("---")
         st.subheader("3. Ruang Karantina (Preview Data)")
-        st.info("Sistem ini kini membaca murni sesuai urutan PDF. Fitur Auto-Heal (yang merusak Master) telah dinonaktifkan sepenuhnya.")
+        st.info("Sistem HANYA mengekstrak. Teks anomali/cacat dari Sirena telah dikoreksi otomatis mengikuti Master Anda. Master Database Anda 100% terkunci dan tidak akan ditimpa.")
         
         cols_order = ['KRO', 'RO', 'Komponen', 'Sub_Komponen', 'Kegiatan', 'Akun_Code', 'Akun_Name', 'Uraian', 'Vol_1', 'Sat_1', 'Vol_2', 'Sat_2', 'Harga_Satuan', 'Total_Biaya']
         df_display = st.session_state.ekstrak_result[cols_order]
         df_edit = st.data_editor(df_display, num_rows="dynamic", use_container_width=True, height=400)
 
-        if st.button("💾 Konfirmasi & Simpan ke Database RAB", type="primary", use_container_width=True):
+        if st.button("💾 Konfirmasi & Simpan Permanen ke Tabel Kegiatan", type="primary", use_container_width=True):
             with st.spinner("Menyuntikkan data murni ke tabel Kegiatan..."):
                 
                 df_rab_utama = load_table("rab_utama", ["ID_RAB", "Tanggal", "Tahun", "Tgl_Cetak", "Sumber_Dana", "KRO", "RO", "Komponen", "Sub_Komponen", "Kegiatan", "Sasaran", "Volume", "Satuan", "Alokasi", "Jabatan", "Nama_Pejabat", "NIP_Pejabat", "Versi_RAB", "Is_Active", "Catatan"], f"WHERE \"Tahun\" = '{thn_target}'")
@@ -281,7 +334,7 @@ def show_page():
                 
                 save_success = update_rab_tahun(df_rab_utama, df_rab_detail, thn_target)
                 if save_success:
-                    log_audit("EKSTRAK PDF", f"Injeksi murni RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}).")
+                    log_audit("EKSTRAK PDF", f"Injeksi murni RKAKL {sumber_dana} tahun {thn_target} (Versi: {ver_target}). Total: Rp {format_rupiah(df_edit['Total_Biaya'].sum())}")
                     st.session_state.ekstrak_result = pd.DataFrame() 
                     st.success("🎉 Dokumen RKAKL berhasil diinjeksi! Data masuk murni tanpa mengubah Data Master Anda sedikit pun.")
                     st.rerun()
